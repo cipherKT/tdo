@@ -23,7 +23,7 @@ impl Engine {
         }
     }
 
-    pub(crate) fn get_project_by_id(&self, id: i64) -> Result<Project, StoreError> {
+    pub fn get_project_by_id(&self, id: i64) -> Result<Project, StoreError> {
         let project = self.conn.query_row(
             "SELECT id, name, description, created_at FROM projects where id = ?1",
             [id],

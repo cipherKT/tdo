@@ -198,6 +198,34 @@ impl Engine {
             .map(|t| t.expect("task must exist since we fetched it"))
     }
 
+    pub fn next_task(&self) -> Result<Option<Task>, StoreError> {
+        let result = self.conn.query_row(
+            "SELECT id, project_id, name, description, priority, due_date, done, created_at
+             FROM tasks
+             WHERE done = FALSE AND due_date IS NOT NULL
+             ORDER BY due_date ASC
+             LIMIT 1",
+            [],
+            |row| {
+                Ok(Task {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    name: row.get(2)?,
+                    description: row.get(3)?,
+                    priority: row.get(4)?,
+                    due_date: row.get(5)?,
+                    done: row.get(6)?,
+                    created_at: row.get(7)?,
+                })
+            },
+        );
+        match result {
+            Ok(t) => Ok(Some(t)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(StoreError::Db(e)),
+        }
+    }
+
     pub fn task_names(&self, project_name: &str) -> Result<Vec<String>, StoreError> {
         let project = self.get_project_by_name(project_name)?;
         let mut stmt = self

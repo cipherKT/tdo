@@ -8,6 +8,8 @@ pub enum StoreError {
     Db(rusqlite::Error),
 }
 
+impl std::error::Error for StoreError {}
+
 impl fmt::Display for StoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
