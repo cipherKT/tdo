@@ -132,4 +132,14 @@ impl Engine {
             Err(e) => Err(StoreError::Db(e)),
         }
     }
+
+    pub fn project_names(&self) -> Result<Vec<String>, StoreError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT name FROM projects ORDER BY name ASC")?;
+        let names = stmt
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<Vec<String>, _>>()?;
+        Ok(names)
+    }
 }

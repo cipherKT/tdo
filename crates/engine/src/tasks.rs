@@ -59,7 +59,7 @@ impl Engine {
         let project = self.get_project_by_name(project_name)?;
         let mut stmt = self.conn.prepare(
             "SELECT id, project_id, name, description, priority, due_date, done, created_at
-             FROM tasks WHERE project_id = ?1 ORDER BY created_at DESC",
+             FROM tasks WHERE project_id = ?1 ORDER BY due_date ASC NULLS LAST",
         )?;
         let rows = stmt.query_map([project.id], |row| {
             Ok(Task {
@@ -183,5 +183,29 @@ impl Engine {
 
         let updated_name = patch.name.as_deref().unwrap_or(task_name);
         self.get_task_by_name(project_name, updated_name).map(Some)
+    }
+
+    pub fn toggle_done(&self, project_name: &str, task_name: &str) -> Result<Task, StoreError> {
+        let task = self.get_task_by_name(project_name, task_name)?;
+        let patch = TaskPatch {
+            done: Some(!task.done),
+            name: None,
+            description: None,
+            priority: None,
+            due_date: None,
+        };
+        self.modify_task(project_name, task_name, patch)
+            .map(|t| t.expect("task must exist since we fetched it"))
+    }
+
+    pub fn task_names(&self, project_name: &str) -> Result<Vec<String>, StoreError> {
+        let project = self.get_project_by_name(project_name)?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT name FROM tasks WHERE project_id = ?1 ORDER BY name ASC")?;
+        let names = stmt
+            .query_map([project.id], |row| row.get(0))?
+            .collect::<Result<Vec<String>, _>>()?;
+        Ok(names)
     }
 }
