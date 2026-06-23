@@ -37,3 +37,19 @@ pub struct TaskPatch {
     pub due_date: Option<Option<chrono::DateTime<chrono::Utc>>>,
     pub done: Option<bool>,
 }
+
+pub struct NextTask {
+    pub task: Task,
+    pub project_name: String,
+}
+
+pub struct Stats {
+    pub total: i64,
+    pub done: i64,
+    pub pending: i64,
+    pub overdue: i64,
+    pub p1: i64,
+    pub p2: i64,
+    pub p3: i64,
+    pub p4: i64,
+}

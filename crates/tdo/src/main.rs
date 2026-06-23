@@ -11,12 +11,13 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() == 2 && args[1] == "--next_task" {
         match next_task() {
-            Ok(Some((project_name, task))) => {
-                let due = task
+            Ok(Some(nt)) => {
+                let due = nt
+                    .task
                     .due_date
                     .map(|dt| dt.format("%b %d").to_string())
                     .unwrap_or_default();
-                println!("{} ({}) — due {}", task.name, project_name, due);
+                println!("{} ({}) — due {}", nt.task.name, nt.project_name, due);
             }
             Ok(None) => {}
             Err(e) => eprintln!("error: {e}"),
@@ -27,13 +28,7 @@ fn main() {
     }
 }
 
-fn next_task() -> Result<Option<(String, engine::Task)>, Box<dyn std::error::Error>> {
+fn next_task() -> Result<Option<engine::NextTask>, Box<dyn std::error::Error>> {
     let engine = engine::Engine::open(db_path())?;
-    match engine.next_task()? {
-        Some(task) => {
-            let project = engine.get_project_by_id(task.project_id)?;
-            Ok(Some((project.name, task)))
-        }
-        None => Ok(None),
-    }
+    Ok(engine.next_task()?)
 }

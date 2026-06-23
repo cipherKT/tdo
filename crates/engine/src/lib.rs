@@ -1,13 +1,15 @@
-mod models;
 mod error;
+mod models;
 mod projects;
+mod stats;
+mod tags;
 mod tasks;
 
 use rusqlite::Connection;
 use std::path::Path;
 
 pub use error::StoreError;
-pub use models::{Project, ProjectPatch, Tag, Task, TaskPatch};
+pub use models::{NextTask, Project, ProjectPatch, Stats, Tag, Task, TaskPatch};
 
 pub struct Engine {
     conn: Connection,
