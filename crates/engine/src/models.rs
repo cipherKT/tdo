@@ -12,6 +12,7 @@ pub struct Tag {
     pub name: String,
 }
 
+#[derive(serde::Serialize)]
 pub struct Task {
     pub id: i64,
     pub project_id: i64,
@@ -38,6 +39,7 @@ pub struct TaskPatch {
     pub done: Option<bool>,
 }
 
+#[derive(serde::Serialize)]
 pub struct NextTask {
     pub task: Task,
     pub project_name: String,

@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 rusqlite = { version = "0.40.1", features = ["bundled", "chrono"]}
-chrono = "0.4.45"
+chrono = { version = "0.4.45", features = ["serde"] }
+serde = { version = "1.0.228", features = ["derive"] }

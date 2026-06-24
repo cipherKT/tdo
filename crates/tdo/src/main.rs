@@ -1,34 +1,50 @@
+use clap::Parser;
+use engine::Engine;
 use std::path::PathBuf;
 
+#[derive(Parser)]
+#[command(name = "tdo", about = "A terminal todo manager")]
+struct Args {
+    #[arg(long, help = "Print the next pending task as JSON (for waybar)")]
+    next_task: bool,
+}
+
 fn db_path() -> PathBuf {
-    let home = std::env::var("HOME").expect("HOME not set");
-    let dir = PathBuf::from(home).join(".local/share/tdo");
-    std::fs::create_dir_all(&dir).expect("failed to create data directory");
-    dir.join("todo.db")
+    let base = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(base).join(".local/share/tdo/tdo.db")
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() == 2 && args[1] == "--next_task" {
-        match next_task() {
-            Ok(Some(nt)) => {
-                let due = nt
-                    .task
-                    .due_date
-                    .map(|dt| dt.format("%b %d").to_string())
-                    .unwrap_or_default();
-                println!("{} ({}) — due {}", nt.task.name, nt.project_name, due);
-            }
-            Ok(None) => {}
-            Err(e) => eprintln!("error: {e}"),
-        }
-    } else {
-        eprintln!("Usage: tdo --next_task");
-        std::process::exit(1);
-    }
-}
+    let args = Args::parse();
 
-fn next_task() -> Result<Option<engine::NextTask>, Box<dyn std::error::Error>> {
-    let engine = engine::Engine::open(db_path())?;
-    Ok(engine.next_task()?)
+    let path = db_path();
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("Failed to create data directory");
+    }
+
+    let engine = Engine::open(&path).expect("Failed to open database");
+
+    if args.next_task {
+        match engine.next_task() {
+            Ok(Some(nt)) => {
+                let json = serde_json::json!({
+                    "name": nt.task.name,
+                    "due_date": nt.task.due_date,
+                    "project_name": nt.project_name
+                });
+                println!("{}", json);
+            }
+            Ok(None) => {
+                // no pending task, waybar thinks all clear
+            }
+            Err(e) => {
+                eprintln!("Error: {:?}", e);
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
+    println!("TUI not implemented yet!")
 }
