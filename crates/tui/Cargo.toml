@@ -1,7 +1,12 @@
 [package]
-name = "tui"
+name = "tdo-tui"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 engine = { path = "../engine/"}
+ratatui = "0.30.2"
+crossterm = "0.29.0"
+anyhow = "1.0.102"
+
+chrono = { version = "0.4.45", features = ["serde"] }

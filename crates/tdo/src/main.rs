@@ -46,5 +46,5 @@ fn main() {
         return;
     }
 
-    println!("TUI not implemented yet!")
+    tdo_tui::run(engine).expect("Failed to run TUI");
 }
