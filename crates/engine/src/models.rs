@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 
+#[derive(Debug, Clone)]
 pub struct Project {
     pub id: i64,
     pub name: String,
@@ -7,12 +8,13 @@ pub struct Project {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone)]
 pub struct Tag {
     pub id: i64,
     pub name: String,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct Task {
     pub id: i64,
     pub project_id: i64,
@@ -26,11 +28,13 @@ pub struct Task {
 
 // structs for modifying tasks and projects
 
+#[derive(Debug, Clone)]
 pub struct ProjectPatch {
     pub name: Option<String>,
     pub description: Option<String>,
 }
 
+#[derive(Debug, Clone)]
 pub struct TaskPatch {
     pub name: Option<String>,
     pub description: Option<String>,
@@ -39,12 +43,13 @@ pub struct TaskPatch {
     pub done: Option<bool>,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct NextTask {
     pub task: Task,
     pub project_name: String,
 }
 
+#[derive(Debug, Clone)]
 pub struct Stats {
     pub total: i64,
     pub done: i64,
