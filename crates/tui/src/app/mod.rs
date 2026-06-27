@@ -211,6 +211,8 @@ pub fn handle_key(
 ) -> anyhow::Result<bool> {
     use crossterm::event::KeyCode;
 
+    state.theme = crate::theme::Theme::load();
+
     if matches!(state.mode, AppMode::Browsing) && key.code == KeyCode::Char('q') {
         return Ok(true);
     }
