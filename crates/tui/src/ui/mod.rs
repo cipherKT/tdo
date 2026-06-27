@@ -2,7 +2,7 @@ use crate::app::{AppMode, AppState};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
 };
@@ -56,6 +56,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
             current_input,
             warning,
             *in_insert_mode,
+            &state.theme,
         );
     }
 }
@@ -68,6 +69,7 @@ fn render_form_modal(
     current_input: &str,
     warning: &Option<String>,
     in_insert_mode: bool,
+    theme: &crate::theme::Theme,
 ) {
     let width = 64;
     let height = 15;
@@ -76,9 +78,9 @@ fn render_form_modal(
     frame.render_widget(Clear, area);
 
     let border_color = if in_insert_mode {
-        Color::Yellow
+        theme.secondary_accent
     } else {
-        Color::Cyan
+        theme.border_active
     };
     let block = Block::default()
         .borders(Borders::ALL)
@@ -109,7 +111,7 @@ fn render_form_modal(
     lines.push(Line::from(vec![Span::styled(
         heading,
         Style::default()
-            .fg(Color::Cyan)
+            .fg(theme.primary_accent)
             .add_modifier(Modifier::BOLD),
     )]));
     lines.push(Line::from("─".repeat(inner.width as usize)));
@@ -130,15 +132,15 @@ fn render_form_modal(
         let field_style = if is_selected {
             if in_insert_mode {
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(theme.secondary_accent)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
-                    .fg(Color::White)
+                    .fg(theme.highlight)
                     .add_modifier(Modifier::BOLD)
             }
         } else {
-            Style::default().fg(Color::Gray)
+            Style::default().fg(theme.label)
         };
 
         lines.push(Line::from(vec![
@@ -147,9 +149,9 @@ fn render_form_modal(
             Span::styled(
                 value,
                 if is_selected && in_insert_mode {
-                    Style::default().fg(Color::Yellow)
+                    Style::default().fg(theme.secondary_accent)
                 } else {
-                    Style::default().fg(Color::LightCyan)
+                    Style::default().fg(theme.value)
                 },
             ),
         ]));
@@ -160,7 +162,9 @@ fn render_form_modal(
     if let Some(warn) = warning {
         lines.push(Line::from(vec![Span::styled(
             format!(" ⚠️  {}", warn),
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme.status_overdue)
+                .add_modifier(Modifier::BOLD),
         )]));
     } else {
         lines.push(Line::from(""));
@@ -175,9 +179,7 @@ fn render_form_modal(
     };
     lines.push(Line::from(vec![Span::styled(
         footer_text,
-        Style::default()
-            .fg(Color::DarkGray)
-            .add_modifier(Modifier::DIM),
+        Style::default().fg(theme.label).add_modifier(Modifier::DIM),
     )]));
 
     let paragraph = Paragraph::new(lines);

@@ -1,17 +1,12 @@
 use crate::app::{AppContext, AppMode, AppState};
-use ratatui::{
-    Frame,
-    layout::Rect,
-    style::{Color, Style},
-    widgets::Paragraph,
-};
+use ratatui::{Frame, layout::Rect, style::Style, widgets::Paragraph};
 
 pub(super) fn render_hint_bar(frame: &mut Frame, state: &AppState, area: Rect) {
     match &state.mode {
         AppMode::Browsing => {
             let hint = "  j/k move  ·  enter open  ·  / search  ·  d delete  ·  q quit";
             frame.render_widget(
-                Paragraph::new(hint).style(Style::default().fg(Color::DarkGray)),
+                Paragraph::new(hint).style(Style::default().fg(state.theme.label)),
                 area,
             );
         }
@@ -26,13 +21,14 @@ pub(super) fn render_hint_bar(frame: &mut Frame, state: &AppState, area: Rect) {
                 format!(" / {}", buffer)
             };
             frame.render_widget(
-                Paragraph::new(content).style(Style::default().fg(Color::Yellow)),
+                Paragraph::new(content).style(Style::default().fg(state.theme.secondary_accent)),
                 area,
             );
         }
         AppMode::ConfirmPrompt { message, .. } => {
             frame.render_widget(
-                Paragraph::new(message.as_str()).style(Style::default().fg(Color::Red)),
+                Paragraph::new(message.as_str())
+                    .style(Style::default().fg(state.theme.status_overdue)),
                 area,
             );
         }
@@ -43,7 +39,7 @@ pub(super) fn render_hint_bar(frame: &mut Frame, state: &AppState, area: Rect) {
                 "  [NORMAL]  j/k: navigate  ·  i: edit field  ·  enter: save  ·  esc: cancel"
             };
             frame.render_widget(
-                Paragraph::new(content).style(Style::default().fg(Color::Yellow)),
+                Paragraph::new(content).style(Style::default().fg(state.theme.secondary_accent)),
                 area,
             );
         }

@@ -2,7 +2,7 @@ use crate::app::{AppContext, AppState};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
@@ -10,9 +10,9 @@ use ratatui::{
 pub(super) fn render_projects_sidebar(frame: &mut Frame, state: &AppState, area: Rect) {
     let is_focused = matches!(state.context, AppContext::Home);
     let border_color = if is_focused {
-        Color::Cyan
+        state.theme.border_active
     } else {
-        Color::DarkGray
+        state.theme.border_inactive
     };
     let block = Block::default()
         .title(" projects ")
@@ -45,10 +45,10 @@ pub(super) fn render_projects_sidebar(frame: &mut Frame, state: &AppState, area:
         };
         let style = if is_selected_or_active {
             Style::default()
-                .fg(Color::White)
+                .fg(state.theme.highlight)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(state.theme.label)
         };
 
         let line = Line::from(vec![Span::styled(
@@ -79,9 +79,9 @@ pub(super) fn render_tasks_list(frame: &mut Frame, state: &AppState, area: Rect)
     };
 
     let border_color = if is_focused {
-        Color::Cyan
+        state.theme.border_active
     } else {
-        Color::DarkGray
+        state.theme.border_inactive
     };
     let block = Block::default()
         .title(format!(" tasks — {} ", project_name))
@@ -104,17 +104,17 @@ pub(super) fn render_tasks_list(frame: &mut Frame, state: &AppState, area: Rect)
         let prefix = if is_selected { "▶ " } else { "  " };
         let style = if is_selected {
             Style::default()
-                .fg(Color::White)
+                .fg(state.theme.highlight)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default()
         };
 
         let priority_label = match task.priority {
-            1 => Span::styled("P1", Style::default().fg(Color::Rgb(243, 139, 168))),
-            2 => Span::styled("P2", Style::default().fg(Color::Rgb(249, 226, 175))),
-            3 => Span::styled("P3", Style::default().fg(Color::Rgb(166, 227, 161))),
-            _ => Span::styled("P?", Style::default().fg(Color::Gray)),
+            1 => Span::styled("P1", Style::default().fg(state.theme.status_overdue)),
+            2 => Span::styled("P2", Style::default().fg(state.theme.status_pending)),
+            3 => Span::styled("P3", Style::default().fg(state.theme.status_done)),
+            _ => Span::styled("P?", Style::default().fg(state.theme.label)),
         };
 
         let due_str = match &task.due_date {
@@ -134,7 +134,7 @@ pub(super) fn render_tasks_list(frame: &mut Frame, state: &AppState, area: Rect)
 
         let done_style = if task.done {
             Style::default()
-                .fg(Color::DarkGray)
+                .fg(state.theme.label)
                 .add_modifier(Modifier::CROSSED_OUT)
         } else {
             style
@@ -145,7 +145,7 @@ pub(super) fn render_tasks_list(frame: &mut Frame, state: &AppState, area: Rect)
             Span::raw("  "),
             priority_label,
             Span::raw("  "),
-            Span::styled(due_str, Style::default().fg(Color::DarkGray)),
+            Span::styled(due_str, Style::default().fg(state.theme.label)),
         ]);
 
         let row_area = Rect {

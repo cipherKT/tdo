@@ -50,6 +50,7 @@ pub struct AppState {
     pub project_stats: engine::Stats,
     pub selected_item_tags: Vec<String>,
     pub projects_task_counts: Vec<(String, i64)>,
+    pub theme: crate::theme::Theme,
 }
 
 impl AppState {
@@ -95,6 +96,7 @@ impl AppState {
             project_stats,
             selected_item_tags,
             projects_task_counts,
+            theme: crate::theme::Theme::load(),
         })
     }
 }

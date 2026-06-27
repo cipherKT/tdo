@@ -1,8 +1,9 @@
 use crate::app::AppState;
+use crate::theme::Theme;
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
 };
@@ -11,7 +12,7 @@ pub(super) fn render_analytics(frame: &mut Frame, state: &AppState, area: Rect) 
     let block = Block::default()
         .title(" stats ")
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray));
+        .border_style(Style::default().fg(state.theme.border_inactive));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -26,7 +27,7 @@ pub(super) fn render_analytics(frame: &mut Frame, state: &AppState, area: Rect) 
     lines.push(Line::from(vec![Span::styled(
         "GLOBAL STATS",
         Style::default()
-            .fg(Color::DarkGray)
+            .fg(state.theme.label)
             .add_modifier(Modifier::DIM),
     )]));
 
@@ -36,28 +37,29 @@ pub(super) fn render_analytics(frame: &mut Frame, state: &AppState, area: Rect) 
         s.pending,
         s.overdue,
         inner.width as usize,
+        &state.theme,
     ));
 
     lines.push(Line::from(vec![
         Span::styled(
             format!("Done: {} ", s.done),
-            Style::default().fg(Color::Rgb(166, 227, 161)),
+            Style::default().fg(state.theme.status_done),
         ),
         Span::styled(
             format!("Pend: {} ", s.pending),
-            Style::default().fg(Color::Rgb(249, 226, 175)),
+            Style::default().fg(state.theme.status_pending),
         ),
         Span::styled(
             format!("Overdue: {}", s.overdue),
-            Style::default().fg(Color::Rgb(243, 139, 168)),
+            Style::default().fg(state.theme.status_overdue),
         ),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("Total Tasks: ", Style::default().fg(Color::Gray)),
+        Span::styled("Total Tasks: ", Style::default().fg(state.theme.label)),
         Span::styled(
             s.total.to_string(),
             Style::default()
-                .fg(Color::Cyan)
+                .fg(state.theme.primary_accent)
                 .add_modifier(Modifier::BOLD),
         ),
     ]));
@@ -67,14 +69,14 @@ pub(super) fn render_analytics(frame: &mut Frame, state: &AppState, area: Rect) 
     lines.push(Line::from(vec![Span::styled(
         "TASKS PER PROJECT",
         Style::default()
-            .fg(Color::DarkGray)
+            .fg(state.theme.label)
             .add_modifier(Modifier::DIM),
     )]));
 
     if state.projects_task_counts.is_empty() {
         lines.push(Line::from(vec![Span::styled(
             "No projects found.",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(state.theme.label),
         )]));
     } else {
         let max_count = state
@@ -103,12 +105,12 @@ pub(super) fn render_analytics(frame: &mut Frame, state: &AppState, area: Rect) 
             };
 
             lines.push(Line::from(vec![
-                Span::styled(name_label, Style::default().fg(Color::Cyan)),
+                Span::styled(name_label, Style::default().fg(state.theme.primary_accent)),
                 Span::styled(" ", Style::default()),
-                Span::styled(bar_chars, Style::default().fg(Color::LightBlue)),
+                Span::styled(bar_chars, Style::default().fg(state.theme.secondary_accent)),
                 Span::styled(
                     format!(" ({})", count),
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(state.theme.label),
                 ),
             ]));
         }
@@ -118,12 +120,18 @@ pub(super) fn render_analytics(frame: &mut Frame, state: &AppState, area: Rect) 
     frame.render_widget(paragraph, inner);
 }
 
-fn render_thin_progress_bar(done: i64, pending: i64, overdue: i64, width: usize) -> Line<'static> {
+fn render_thin_progress_bar(
+    done: i64,
+    pending: i64,
+    overdue: i64,
+    width: usize,
+    theme: &Theme,
+) -> Line<'static> {
     let total = done + pending + overdue;
     if total == 0 {
         return Line::from(vec![Span::styled(
             "─".repeat(width),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(theme.label),
         )]);
     }
 
@@ -162,15 +170,15 @@ fn render_thin_progress_bar(done: i64, pending: i64, overdue: i64, width: usize)
     Line::from(vec![
         Span::styled(
             "▂".repeat(done_blocks),
-            Style::default().fg(Color::Rgb(166, 227, 161)),
+            Style::default().fg(theme.status_done),
         ),
         Span::styled(
             "▂".repeat(pending_blocks),
-            Style::default().fg(Color::Rgb(249, 226, 175)),
+            Style::default().fg(theme.status_pending),
         ),
         Span::styled(
             "▂".repeat(overdue_blocks),
-            Style::default().fg(Color::Rgb(243, 139, 168)),
+            Style::default().fg(theme.status_overdue),
         ),
     ])
 }
