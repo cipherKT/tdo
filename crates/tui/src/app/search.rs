@@ -63,11 +63,12 @@ pub(super) fn handle_search(
                     } else if !buffer.is_empty() {
                         state.mode = AppMode::MultiStepForm {
                             kind: FormKind::CreateProject,
-                            step: 1,
+                            step: 0,
                             name: buffer.clone(),
-                            answers: vec![buffer],
+                            answers: vec![buffer, String::new(), String::new()],
                             current_input: String::new(),
                             warning: None,
+                            in_insert_mode: false,
                         };
                     }
                 }
@@ -79,11 +80,18 @@ pub(super) fn handle_search(
                     } else if !buffer.is_empty() {
                         state.mode = AppMode::MultiStepForm {
                             kind: FormKind::CreateTask,
-                            step: 1,
+                            step: 0,
                             name: name.clone(),
-                            answers: vec![buffer],
+                            answers: vec![
+                                buffer,
+                                String::new(),
+                                String::new(),
+                                "3".to_string(),
+                                String::new(),
+                            ],
                             current_input: String::new(),
                             warning: None,
+                            in_insert_mode: false,
                         };
                     }
                 }

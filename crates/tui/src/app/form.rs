@@ -8,115 +8,144 @@ pub(super) fn handle_form(
 ) -> anyhow::Result<()> {
     use crossterm::event::KeyCode;
 
-    match key.code {
-        KeyCode::Esc => {
-            state.mode = AppMode::Browsing;
-            state.filtered_projects = (0..state.projects.len()).collect();
-            state.filtered_tasks = (0..state.tasks.len()).collect();
-        }
-        KeyCode::Char(c) => {
+    let mut submit_data = None;
+
+    {
+        let (form_kind, step, answers, current_input, warning, in_insert_mode, name) =
             if let AppMode::MultiStepForm {
-                current_input,
-                warning,
-                ..
-            } = &mut state.mode
-            {
-                current_input.push(c);
-                *warning = None;
-            }
-        }
-        KeyCode::Backspace => {
-            if let AppMode::MultiStepForm {
-                current_input,
-                warning,
-                ..
-            } = &mut state.mode
-            {
-                current_input.pop();
-                *warning = None;
-            }
-        }
-        KeyCode::Enter => {
-            let (form_kind, step, total, answers, current, name) = if let AppMode::MultiStepForm {
                 kind,
                 step,
                 answers,
                 current_input,
+                warning,
+                in_insert_mode,
                 name,
-                ..
-            } = &state.mode
+            } = &mut state.mode
             {
-                let total = form_total_steps(kind);
                 (
                     kind.clone(),
-                    *step,
-                    total,
-                    answers.clone(),
-                    current_input.clone(),
+                    step,
+                    answers,
+                    current_input,
+                    warning,
+                    in_insert_mode,
                     name.clone(),
                 )
             } else {
                 return Ok(());
             };
 
-            if step == 2 {
-                let check = validate_tags(&current);
-                if let Err(err_msg) = check {
-                    if let AppMode::MultiStepForm { warning, .. } = &mut state.mode {
+        let total = form_total_steps(&form_kind);
+
+        if *in_insert_mode {
+            match key.code {
+                KeyCode::Esc => {
+                    let check = if *step == 2 {
+                        validate_tags(current_input)
+                    } else {
+                        Ok(())
+                    };
+                    if let Err(err_msg) = check {
                         *warning = Some(err_msg);
+                    } else {
+                        *warning = None;
                     }
-                    return Ok(());
+                    if *step < answers.len() {
+                        answers[*step] = current_input.clone();
+                    } else {
+                        answers.push(current_input.clone());
+                    }
+                    *in_insert_mode = false;
                 }
-            }
-
-            let mut new_answers = answers.clone();
-            // for modify forms, answers is pre-filled — replace the current step's value
-            // with what the user actually typed
-            if step < new_answers.len() {
-                new_answers[step] = current.clone();
-            } else {
-                new_answers.push(current.clone());
-            }
-            let next_step = step + 1;
-
-            if next_step >= total {
-                match &form_kind {
-                    FormKind::CreateProject => {
-                        submit_create_project(state, engine, &new_answers)?;
-                    }
-                    FormKind::CreateTask => {
-                        submit_create_task(state, engine, &new_answers, &name)?;
-                    }
-                    FormKind::ModifyProject { original_name } => {
-                        submit_modify_project(state, engine, &new_answers, &original_name.clone())?;
-                    }
-                    FormKind::ModifyTask { original_name } => {
-                        submit_modify_task(
-                            state,
-                            engine,
-                            &new_answers,
-                            &original_name.clone(),
-                            &name,
-                        )?;
-                    }
-                }
-            } else {
-                if let AppMode::MultiStepForm {
-                    step,
-                    answers,
-                    current_input,
-                    warning,
-                    ..
-                } = &mut state.mode
-                {
-                    *step = next_step;
-                    *current_input = new_answers.get(next_step).cloned().unwrap_or_default();
-                    *answers = new_answers;
+                KeyCode::Char(c) => {
+                    current_input.push(c);
                     *warning = None;
                 }
+                KeyCode::Backspace => {
+                    current_input.pop();
+                    *warning = None;
+                }
+                _ => {}
+            }
+        } else {
+            match key.code {
+                KeyCode::Esc => {
+                    state.mode = AppMode::Browsing;
+                    state.filtered_projects = (0..state.projects.len()).collect();
+                    state.filtered_tasks = (0..state.tasks.len()).collect();
+                }
+                KeyCode::Char('j') => {
+                    *warning = None;
+                    *step = (*step + 1) % total;
+                }
+                KeyCode::Char('k') => {
+                    *warning = None;
+                    *step = if *step == 0 { total - 1 } else { *step - 1 };
+                }
+                KeyCode::Char('i') => {
+                    let initial = answers.get(*step).cloned().unwrap_or_default();
+                    *current_input = initial;
+                    *in_insert_mode = true;
+                    *warning = None;
+                }
+                KeyCode::Enter => {
+                    let tags_val = answers.get(2).map(|s| s.as_str()).unwrap_or("");
+                    if let Err(err_msg) = validate_tags(tags_val) {
+                        *warning = Some(err_msg);
+                        *step = 2;
+                        return Ok(());
+                    }
+                    if total > 3 {
+                        let prio_val = answers.get(3).map(|s| s.as_str()).unwrap_or("");
+                        if !prio_val.is_empty() {
+                            if let Ok(val) = prio_val.parse::<i64>() {
+                                if !(1..=3).contains(&val) {
+                                    *warning = Some("Priority must be 1, 2, or 3".to_string());
+                                    *step = 3;
+                                    return Ok(());
+                                }
+                            } else {
+                                *warning =
+                                    Some("Priority must be a number (1, 2, or 3)".to_string());
+                                *step = 3;
+                                return Ok(());
+                            }
+                        }
+                    }
+                    if total > 4 {
+                        let due_val = answers.get(4).map(|s| s.as_str()).unwrap_or("");
+                        if !due_val.is_empty()
+                            && chrono::NaiveDate::parse_from_str(due_val, "%Y-%m-%d").is_err()
+                        {
+                            *warning =
+                                Some("Due date must be in YYYY-MM-DD format or blank".to_string());
+                            *step = 4;
+                            return Ok(());
+                        }
+                    }
+
+                    submit_data = Some((form_kind, answers.clone(), name));
+                }
+                _ => {}
             }
         }
-        _ => {}
+    }
+
+    if let Some((form_kind, answers, name)) = submit_data {
+        match &form_kind {
+            FormKind::CreateProject => {
+                submit_create_project(state, engine, &answers)?;
+            }
+            FormKind::CreateTask => {
+                submit_create_task(state, engine, &answers, &name)?;
+            }
+            FormKind::ModifyProject { original_name } => {
+                submit_modify_project(state, engine, &answers, original_name)?;
+            }
+            FormKind::ModifyTask { original_name } => {
+                submit_modify_task(state, engine, &answers, original_name, &name)?;
+            }
+        }
     }
     Ok(())
 }

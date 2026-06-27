@@ -77,11 +77,18 @@ pub(super) fn handle_browsing(
             }
         }
         KeyCode::Esc => {
-            if let AppContext::Project { .. } = &state.context {
+            if let AppContext::Project { name, .. } = &state.context {
+                let target_name = name.clone();
                 state.context = AppContext::Home;
-                state.tasks = Vec::new();
-                state.filtered_tasks = Vec::new();
-                state.selected = 0;
+                if let Some(pos) = state
+                    .filtered_projects
+                    .iter()
+                    .position(|&idx| state.projects[idx].name == target_name)
+                {
+                    state.selected = pos;
+                } else {
+                    state.selected = 0;
+                }
             }
         }
         KeyCode::Char('i') => match &state.context {
@@ -101,8 +108,9 @@ pub(super) fn handle_browsing(
                         step: 0,
                         name: project.name.clone(),
                         answers: prefill.clone(),
-                        current_input: prefill[0].clone(),
+                        current_input: String::new(),
                         warning: None,
+                        in_insert_mode: false,
                     };
                 }
             }
@@ -132,8 +140,9 @@ pub(super) fn handle_browsing(
                         step: 0,
                         name: name.clone(),
                         answers: prefill.clone(),
-                        current_input: prefill[0].clone(),
+                        current_input: String::new(),
                         warning: None,
+                        in_insert_mode: false,
                     };
                 }
             }

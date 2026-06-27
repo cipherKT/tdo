@@ -30,6 +30,7 @@ pub enum AppMode {
         answers: Vec<String>,
         current_input: String,
         warning: Option<String>,
+        in_insert_mode: bool,
     },
     ConfirmPrompt {
         message: String,
@@ -47,6 +48,8 @@ pub struct AppState {
     pub filtered_tasks: Vec<usize>,
     pub stats: engine::Stats,
     pub project_stats: engine::Stats,
+    pub selected_item_tags: Vec<String>,
+    pub projects_task_counts: Vec<(String, i64)>,
 }
 
 impl AppState {
@@ -58,36 +61,88 @@ impl AppState {
         } else {
             engine::Stats::default()
         };
+        let tasks = if let Some(proj) = projects.first() {
+            engine.list_tasks(&proj.name)?
+        } else {
+            Vec::new()
+        };
+        let filtered_tasks = (0..tasks.len()).collect();
+        let selected_item_tags = if let Some(proj) = projects.first() {
+            engine
+                .get_tags_for_project(&proj.name)?
+                .into_iter()
+                .map(|t| t.name)
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        let mut projects_task_counts = Vec::new();
+        for proj in &projects {
+            let stats = engine.project_stats(&proj.name)?;
+            projects_task_counts.push((proj.name.clone(), stats.total));
+        }
+
         Ok(AppState {
             context: AppContext::Home,
             mode: AppMode::Browsing,
             projects,
-            tasks: Vec::new(),
+            tasks,
             selected: 0,
             filtered_projects,
-            filtered_tasks: Vec::new(),
+            filtered_tasks,
             stats: engine.global_stats()?,
             project_stats,
+            selected_item_tags,
+            projects_task_counts,
         })
     }
 }
 
 pub fn update_stats(state: &mut AppState, engine: &Engine) -> anyhow::Result<()> {
     state.stats = engine.global_stats()?;
+    let mut projects_task_counts = Vec::new();
+    for proj in &state.projects {
+        let stats = engine.project_stats(&proj.name)?;
+        projects_task_counts.push((proj.name.clone(), stats.total));
+    }
+    state.projects_task_counts = projects_task_counts;
+
     match &state.context {
         AppContext::Home => {
             if let Some(&proj_idx) = state.filtered_projects.get(state.selected) {
                 if let Some(project) = state.projects.get(proj_idx) {
                     state.project_stats = engine.project_stats(&project.name)?;
+                    let tasks = engine.list_tasks(&project.name)?;
+                    state.tasks = tasks;
+                    state.filtered_tasks = (0..state.tasks.len()).collect();
+                    let tags = engine.get_tags_for_project(&project.name)?;
+                    state.selected_item_tags = tags.into_iter().map(|t| t.name).collect();
                 } else {
                     state.project_stats = engine::Stats::default();
+                    state.tasks = Vec::new();
+                    state.filtered_tasks = Vec::new();
+                    state.selected_item_tags = Vec::new();
                 }
             } else {
                 state.project_stats = engine::Stats::default();
+                state.tasks = Vec::new();
+                state.filtered_tasks = Vec::new();
+                state.selected_item_tags = Vec::new();
             }
         }
         AppContext::Project { name, .. } => {
             state.project_stats = engine.project_stats(name)?;
+            if let Some(&task_idx) = state.filtered_tasks.get(state.selected) {
+                if let Some(task) = state.tasks.get(task_idx) {
+                    let tags = engine.get_tags_for_task(name, &task.name)?;
+                    state.selected_item_tags = tags.into_iter().map(|t| t.name).collect();
+                } else {
+                    state.selected_item_tags = Vec::new();
+                }
+            } else {
+                state.selected_item_tags = Vec::new();
+            }
         }
     }
     Ok(())
@@ -266,29 +321,28 @@ mod tests {
             state.mode,
             AppMode::MultiStepForm {
                 kind: FormKind::CreateProject,
-                step: 1,
+                step: 0,
                 ..
             }
         ));
 
-        // Fill description step (step 1)
+        // Move to step 1 (Description) and edit it
+        handle_key(&mut state, make_key(KeyCode::Char('j')), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Char('i')), &engine).unwrap();
         for c in "desc".chars() {
             handle_key(&mut state, make_key(KeyCode::Char(c)), &engine).unwrap();
         }
-        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Esc), &engine).unwrap();
 
-        // Now step 2 (tags)
-        assert!(matches!(
-            state.mode,
-            AppMode::MultiStepForm {
-                kind: FormKind::CreateProject,
-                step: 2,
-                ..
-            }
-        ));
+        // Move to step 2 (Tags) and edit it
+        handle_key(&mut state, make_key(KeyCode::Char('j')), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Char('i')), &engine).unwrap();
         for c in "#t1 #t2".chars() {
             handle_key(&mut state, make_key(KeyCode::Char(c)), &engine).unwrap();
         }
+        handle_key(&mut state, make_key(KeyCode::Esc), &engine).unwrap();
+
+        // Save form by pressing Enter
         handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
 
         // Completed! App mode goes back to browsing
@@ -325,28 +379,38 @@ mod tests {
             state.mode,
             AppMode::MultiStepForm {
                 kind: FormKind::CreateTask,
-                step: 1,
+                step: 0,
                 ..
             }
         ));
 
         // Step 1: description
+        handle_key(&mut state, make_key(KeyCode::Char('j')), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Char('i')), &engine).unwrap();
         for c in "task desc".chars() {
             handle_key(&mut state, make_key(KeyCode::Char(c)), &engine).unwrap();
         }
-        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Esc), &engine).unwrap();
 
         // Step 2: tags
+        handle_key(&mut state, make_key(KeyCode::Char('j')), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Char('i')), &engine).unwrap();
         for c in "#task_tag".chars() {
             handle_key(&mut state, make_key(KeyCode::Char(c)), &engine).unwrap();
         }
-        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Esc), &engine).unwrap();
 
         // Step 3: priority (1/2/3)
+        handle_key(&mut state, make_key(KeyCode::Char('j')), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Char('i')), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Backspace), &engine).unwrap(); // clear default "3"
         handle_key(&mut state, make_key(KeyCode::Char('1')), &engine).unwrap();
-        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Esc), &engine).unwrap();
 
-        // Step 4: due date
+        // Step 4: due date (leave blank)
+        handle_key(&mut state, make_key(KeyCode::Char('j')), &engine).unwrap();
+
+        // Submit form
         handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
 
         // Completed task creation! Mode back to browsing
@@ -410,14 +474,17 @@ mod tests {
         handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap(); // Start form
 
         // Fill form steps:
-        // Description
-        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
-        // Tags
-        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
-        // Priority
+        // Description (skip)
+        // Tags (skip)
+        // Priority (set to 2)
+        // Due date (skip)
+        handle_key(&mut state, make_key(KeyCode::Char('j')), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Char('j')), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Char('j')), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Char('i')), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Backspace), &engine).unwrap(); // clear default "3"
         handle_key(&mut state, make_key(KeyCode::Char('2')), &engine).unwrap();
-        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
-        // Due date
+        handle_key(&mut state, make_key(KeyCode::Esc), &engine).unwrap();
         handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
 
         // Now stats should be updated!
@@ -449,10 +516,10 @@ mod tests {
         }
         handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
 
-        // Fill description step
-        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        // Move to step 2 (tags)
+        handle_key(&mut state, make_key(KeyCode::Char('j')), &engine).unwrap(); // step 1
+        handle_key(&mut state, make_key(KeyCode::Char('j')), &engine).unwrap(); // step 2
 
-        // Now in MultiStepForm at step 2 (tags)
         assert!(matches!(
             state.mode,
             AppMode::MultiStepForm {
@@ -462,12 +529,13 @@ mod tests {
             }
         ));
 
-        // Let's type an invalid tag: "invalid_tag" (missing '#')
+        // Enter insert mode to edit tags
+        handle_key(&mut state, make_key(KeyCode::Char('i')), &engine).unwrap();
         for c in "invalid_tag".chars() {
             handle_key(&mut state, make_key(KeyCode::Char(c)), &engine).unwrap();
         }
-        // Hit Enter
-        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        // Hit Esc to exit insert mode (validates and sets warning)
+        handle_key(&mut state, make_key(KeyCode::Esc), &engine).unwrap();
 
         // Should still be at step 2, with a warning
         if let AppMode::MultiStepForm { step, warning, .. } = &state.mode {
@@ -478,22 +546,22 @@ mod tests {
             panic!("Expected MultiStepForm");
         }
 
-        // Type backspace (clears warning)
-        handle_key(&mut state, make_key(KeyCode::Backspace), &engine).unwrap();
+        // Enter insert mode again (warning is cleared, backspacing all clears it on Esc)
+        handle_key(&mut state, make_key(KeyCode::Char('i')), &engine).unwrap();
+        for _ in 0..11 {
+            handle_key(&mut state, make_key(KeyCode::Backspace), &engine).unwrap();
+        }
+        handle_key(&mut state, make_key(KeyCode::Esc), &engine).unwrap();
         if let AppMode::MultiStepForm { warning, .. } = &state.mode {
             assert!(warning.is_none());
         }
 
-        // Clear the buffer by backspacing the rest
-        for _ in 0..10 {
-            handle_key(&mut state, make_key(KeyCode::Backspace), &engine).unwrap();
-        }
-
-        // Type another invalid tag: "#tag$name" (invalid char '$')
+        // Enter insert mode to type invalid tag
+        handle_key(&mut state, make_key(KeyCode::Char('i')), &engine).unwrap();
         for c in "#tag$name".chars() {
             handle_key(&mut state, make_key(KeyCode::Char(c)), &engine).unwrap();
         }
-        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Esc), &engine).unwrap();
 
         // Should still be at step 2, with a warning
         if let AppMode::MultiStepForm { step, warning, .. } = &state.mode {
@@ -509,15 +577,17 @@ mod tests {
             panic!("Expected MultiStepForm");
         }
 
-        // Clear the buffer
+        // Enter insert mode, clear buffer, and type valid tags
+        handle_key(&mut state, make_key(KeyCode::Char('i')), &engine).unwrap();
         for _ in 0..9 {
             handle_key(&mut state, make_key(KeyCode::Backspace), &engine).unwrap();
         }
-
-        // Type valid tags: "#valid-tag #valid_tag2 #valid3"
         for c in "#valid-tag #valid_tag2 #valid3".chars() {
             handle_key(&mut state, make_key(KeyCode::Char(c)), &engine).unwrap();
         }
+        handle_key(&mut state, make_key(KeyCode::Esc), &engine).unwrap();
+
+        // Submit form
         handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
 
         // Completed!

@@ -36,29 +36,16 @@ pub(super) fn render_hint_bar(frame: &mut Frame, state: &AppState, area: Rect) {
                 area,
             );
         }
-        AppMode::MultiStepForm {
-            kind,
-            step,
-            current_input,
-            warning,
-            ..
-        } => {
-            let prompt = crate::app::form_prompt(kind, *step);
-            let total = crate::app::form_total_steps(kind);
-            let content = if let Some(warn) = warning {
-                format!(
-                    " {} ({}/{})  {}▌  ⚠️ {}",
-                    prompt, step, total, current_input, warn
-                )
+        AppMode::MultiStepForm { in_insert_mode, .. } => {
+            let content = if *in_insert_mode {
+                "  [INSERT]  Press ESC to finish editing this field"
             } else {
-                format!(" {} ({}/{})  {}▌", prompt, step, total, current_input)
+                "  [NORMAL]  j/k: navigate  ·  i: edit field  ·  enter: save  ·  esc: cancel"
             };
-            let style = if warning.is_some() {
-                Style::default().fg(Color::Red)
-            } else {
-                Style::default().fg(Color::Yellow)
-            };
-            frame.render_widget(Paragraph::new(content).style(style), area);
+            frame.render_widget(
+                Paragraph::new(content).style(Style::default().fg(Color::Yellow)),
+                area,
+            );
         }
     }
 }
