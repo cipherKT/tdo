@@ -67,6 +67,7 @@ pub(super) fn handle_search(
                             name: buffer.clone(),
                             answers: vec![buffer],
                             current_input: String::new(),
+                            warning: None,
                         };
                     }
                 }
@@ -82,6 +83,7 @@ pub(super) fn handle_search(
                             name: name.clone(),
                             answers: vec![buffer],
                             current_input: String::new(),
+                            warning: None,
                         };
                     }
                 }

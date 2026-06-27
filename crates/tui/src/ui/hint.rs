@@ -40,15 +40,25 @@ pub(super) fn render_hint_bar(frame: &mut Frame, state: &AppState, area: Rect) {
             kind,
             step,
             current_input,
+            warning,
             ..
         } => {
             let prompt = crate::app::form_prompt(kind, *step);
             let total = crate::app::form_total_steps(kind);
-            let content = format!(" {} ({}/{})  {}▌", prompt, step, total, current_input);
-            frame.render_widget(
-                Paragraph::new(content).style(Style::default().fg(Color::Yellow)),
-                area,
-            );
+            let content = if let Some(warn) = warning {
+                format!(
+                    " {} ({}/{})  {}▌  ⚠️ {}",
+                    prompt, step, total, current_input, warn
+                )
+            } else {
+                format!(" {} ({}/{})  {}▌", prompt, step, total, current_input)
+            };
+            let style = if warning.is_some() {
+                Style::default().fg(Color::Red)
+            } else {
+                Style::default().fg(Color::Yellow)
+            };
+            frame.render_widget(Paragraph::new(content).style(style), area);
         }
     }
 }

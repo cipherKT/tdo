@@ -29,6 +29,7 @@ pub enum AppMode {
         name: String,
         answers: Vec<String>,
         current_input: String,
+        warning: Option<String>,
     },
     ConfirmPrompt {
         message: String,
@@ -434,5 +435,96 @@ mod tests {
         assert_eq!(state.project_stats.pending, 0);
         assert_eq!(state.stats.done, 1);
         assert_eq!(state.stats.pending, 1); // 1 pending in p1, 0 in p2
+    }
+
+    #[test]
+    fn test_app_tag_validation() {
+        let engine = Engine::open(":memory:").unwrap();
+        let mut state = AppState::new(&engine).unwrap();
+
+        // Start project creation form
+        handle_key(&mut state, make_key(KeyCode::Char('/')), &engine).unwrap();
+        for c in "new_proj".chars() {
+            handle_key(&mut state, make_key(KeyCode::Char(c)), &engine).unwrap();
+        }
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+
+        // Fill description step
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+
+        // Now in MultiStepForm at step 2 (tags)
+        assert!(matches!(
+            state.mode,
+            AppMode::MultiStepForm {
+                kind: FormKind::CreateProject,
+                step: 2,
+                ..
+            }
+        ));
+
+        // Let's type an invalid tag: "invalid_tag" (missing '#')
+        for c in "invalid_tag".chars() {
+            handle_key(&mut state, make_key(KeyCode::Char(c)), &engine).unwrap();
+        }
+        // Hit Enter
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+
+        // Should still be at step 2, with a warning
+        if let AppMode::MultiStepForm { step, warning, .. } = &state.mode {
+            assert_eq!(*step, 2);
+            assert!(warning.is_some());
+            assert!(warning.as_ref().unwrap().contains("must start with '#'"));
+        } else {
+            panic!("Expected MultiStepForm");
+        }
+
+        // Type backspace (clears warning)
+        handle_key(&mut state, make_key(KeyCode::Backspace), &engine).unwrap();
+        if let AppMode::MultiStepForm { warning, .. } = &state.mode {
+            assert!(warning.is_none());
+        }
+
+        // Clear the buffer by backspacing the rest
+        for _ in 0..10 {
+            handle_key(&mut state, make_key(KeyCode::Backspace), &engine).unwrap();
+        }
+
+        // Type another invalid tag: "#tag$name" (invalid char '$')
+        for c in "#tag$name".chars() {
+            handle_key(&mut state, make_key(KeyCode::Char(c)), &engine).unwrap();
+        }
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+
+        // Should still be at step 2, with a warning
+        if let AppMode::MultiStepForm { step, warning, .. } = &state.mode {
+            assert_eq!(*step, 2);
+            assert!(warning.is_some());
+            assert!(
+                warning
+                    .as_ref()
+                    .unwrap()
+                    .contains("contains invalid character")
+            );
+        } else {
+            panic!("Expected MultiStepForm");
+        }
+
+        // Clear the buffer
+        for _ in 0..9 {
+            handle_key(&mut state, make_key(KeyCode::Backspace), &engine).unwrap();
+        }
+
+        // Type valid tags: "#valid-tag #valid_tag2 #valid3"
+        for c in "#valid-tag #valid_tag2 #valid3".chars() {
+            handle_key(&mut state, make_key(KeyCode::Char(c)), &engine).unwrap();
+        }
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+
+        // Completed!
+        assert!(matches!(state.mode, AppMode::Browsing));
+        assert_eq!(state.projects.len(), 1);
+
+        let tags = engine.get_tags_for_project("new_proj").unwrap();
+        assert_eq!(tags.len(), 3);
     }
 }

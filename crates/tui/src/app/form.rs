@@ -15,13 +15,25 @@ pub(super) fn handle_form(
             state.filtered_tasks = (0..state.tasks.len()).collect();
         }
         KeyCode::Char(c) => {
-            if let AppMode::MultiStepForm { current_input, .. } = &mut state.mode {
+            if let AppMode::MultiStepForm {
+                current_input,
+                warning,
+                ..
+            } = &mut state.mode
+            {
                 current_input.push(c);
+                *warning = None;
             }
         }
         KeyCode::Backspace => {
-            if let AppMode::MultiStepForm { current_input, .. } = &mut state.mode {
+            if let AppMode::MultiStepForm {
+                current_input,
+                warning,
+                ..
+            } = &mut state.mode
+            {
                 current_input.pop();
+                *warning = None;
             }
         }
         KeyCode::Enter => {
@@ -31,6 +43,7 @@ pub(super) fn handle_form(
                 answers,
                 current_input,
                 name,
+                ..
             } = &state.mode
             {
                 let total = form_total_steps(kind);
@@ -45,6 +58,16 @@ pub(super) fn handle_form(
             } else {
                 return Ok(());
             };
+
+            if step == 2 {
+                let check = validate_tags(&current);
+                if let Err(err_msg) = check {
+                    if let AppMode::MultiStepForm { warning, .. } = &mut state.mode {
+                        *warning = Some(err_msg);
+                    }
+                    return Ok(());
+                }
+            }
 
             let mut new_answers = answers.clone();
             // for modify forms, answers is pre-filled — replace the current step's value
@@ -82,12 +105,14 @@ pub(super) fn handle_form(
                     step,
                     answers,
                     current_input,
+                    warning,
                     ..
                 } = &mut state.mode
                 {
                     *step = next_step;
                     *current_input = new_answers.get(next_step).cloned().unwrap_or_default();
                     *answers = new_answers;
+                    *warning = None;
                 }
             }
         }
@@ -270,6 +295,30 @@ fn submit_modify_task(
         Err(e) => {
             state.mode = AppMode::Browsing;
             eprintln!("error modifying task: {}", e);
+        }
+    }
+    Ok(())
+}
+
+fn validate_tags(tags_raw: &str) -> Result<(), String> {
+    if tags_raw.trim().is_empty() {
+        return Ok(());
+    }
+    for tag in tags_raw.split_whitespace() {
+        if !tag.starts_with('#') {
+            return Err(format!("Tag '{}' must start with '#'", tag));
+        }
+        let content = &tag[1..];
+        if content.is_empty() {
+            return Err(format!("Tag '{}' cannot be empty after '#'", tag));
+        }
+        for c in content.chars() {
+            if !c.is_ascii_alphanumeric() && c != '_' && c != '-' {
+                return Err(format!(
+                    "Tag '{}' contains invalid character '{}' (only alphanumeric, '_' and '-' are allowed)",
+                    tag, c
+                ));
+            }
         }
     }
     Ok(())

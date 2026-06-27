@@ -102,6 +102,7 @@ pub(super) fn handle_browsing(
                         name: project.name.clone(),
                         answers: prefill.clone(),
                         current_input: prefill[0].clone(),
+                        warning: None,
                     };
                 }
             }
@@ -132,6 +133,7 @@ pub(super) fn handle_browsing(
                         name: name.clone(),
                         answers: prefill.clone(),
                         current_input: prefill[0].clone(),
+                        warning: None,
                     };
                 }
             }
