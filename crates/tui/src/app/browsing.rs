@@ -1,4 +1,4 @@
-use crate::app::{AppContext, AppMode, AppState, recompute_filter};
+use crate::app::{AppContext, AppMode, AppState, FormKind, recompute_filter};
 use engine::Engine;
 
 pub(super) fn handle_browsing(
@@ -84,6 +84,58 @@ pub(super) fn handle_browsing(
                 state.selected = 0;
             }
         }
+        KeyCode::Char('i') => match &state.context {
+            AppContext::Home => {
+                if let Some(project) = state.projects.get(state.selected) {
+                    let tags = engine.get_tags_for_project(&project.name)?;
+                    let tags_str = tags
+                        .iter()
+                        .map(|t| format!("#{}", t.name))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    let prefill = vec![project.name.clone(), project.description.clone(), tags_str];
+                    state.mode = AppMode::MultiStepForm {
+                        kind: FormKind::ModifyProject {
+                            original_name: project.name.clone(),
+                        },
+                        step: 0,
+                        name: project.name.clone(),
+                        answers: prefill.clone(),
+                        current_input: prefill[0].clone(),
+                    };
+                }
+            }
+            AppContext::Project { name, .. } => {
+                if let Some(task) = state.tasks.get(state.selected) {
+                    let tags = engine.get_tags_for_task(name, &task.name)?;
+                    let tags_str = tags
+                        .iter()
+                        .map(|t| format!("#{}", t.name))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    let due_str = task
+                        .due_date
+                        .map(|d| d.format("%Y-%m-%d").to_string())
+                        .unwrap_or_default();
+                    let prefill = vec![
+                        task.name.clone(),
+                        task.description.clone(),
+                        tags_str,
+                        task.priority.to_string(),
+                        due_str,
+                    ];
+                    state.mode = AppMode::MultiStepForm {
+                        kind: FormKind::ModifyTask {
+                            original_name: task.name.clone(),
+                        },
+                        step: 0,
+                        name: name.clone(),
+                        answers: prefill.clone(),
+                        current_input: prefill[0].clone(),
+                    };
+                }
+            }
+        },
         _ => {}
     }
     Ok(())

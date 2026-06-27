@@ -49,7 +49,7 @@ pub struct NextTask {
     pub project_name: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct Stats {
     pub total: i64,
     pub done: i64,

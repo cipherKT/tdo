@@ -10,9 +10,12 @@ pub enum AppContext {
     Project { name: String, id: i64 },
 }
 
+#[derive(Clone)]
 pub enum FormKind {
     CreateProject,
     CreateTask,
+    ModifyProject { original_name: String },
+    ModifyTask { original_name: String },
 }
 
 pub enum AppMode {
@@ -41,12 +44,19 @@ pub struct AppState {
     pub selected: usize,
     pub filtered_projects: Vec<usize>,
     pub filtered_tasks: Vec<usize>,
+    pub stats: engine::Stats,
+    pub project_stats: engine::Stats,
 }
 
 impl AppState {
     pub fn new(engine: &Engine) -> anyhow::Result<AppState> {
         let projects = engine.list_projects()?;
         let filtered_projects: Vec<usize> = (0..projects.len()).collect();
+        let project_stats = if let Some(proj) = projects.first() {
+            engine.project_stats(&proj.name)?
+        } else {
+            engine::Stats::default()
+        };
         Ok(AppState {
             context: AppContext::Home,
             mode: AppMode::Browsing,
@@ -55,19 +65,42 @@ impl AppState {
             selected: 0,
             filtered_projects,
             filtered_tasks: Vec::new(),
+            stats: engine.global_stats()?,
+            project_stats,
         })
     }
 }
 
+pub fn update_stats(state: &mut AppState, engine: &Engine) -> anyhow::Result<()> {
+    state.stats = engine.global_stats()?;
+    match &state.context {
+        AppContext::Home => {
+            if let Some(&proj_idx) = state.filtered_projects.get(state.selected) {
+                if let Some(project) = state.projects.get(proj_idx) {
+                    state.project_stats = engine.project_stats(&project.name)?;
+                } else {
+                    state.project_stats = engine::Stats::default();
+                }
+            } else {
+                state.project_stats = engine::Stats::default();
+            }
+        }
+        AppContext::Project { name, .. } => {
+            state.project_stats = engine.project_stats(name)?;
+        }
+    }
+    Ok(())
+}
+
 pub fn form_prompt(kind: &FormKind, step: usize) -> &'static str {
     match kind {
-        FormKind::CreateProject => match step {
+        FormKind::CreateProject | FormKind::ModifyProject { .. } => match step {
             0 => "name",
             1 => "description",
             2 => "tags (space-separated, e.g. #security #recon)",
             _ => "",
         },
-        FormKind::CreateTask => match step {
+        FormKind::CreateTask | FormKind::ModifyTask { .. } => match step {
             0 => "name",
             1 => "description",
             2 => "tags (space-separated)",
@@ -80,8 +113,8 @@ pub fn form_prompt(kind: &FormKind, step: usize) -> &'static str {
 
 pub fn form_total_steps(kind: &FormKind) -> usize {
     match kind {
-        FormKind::CreateProject => 3,
-        FormKind::CreateTask => 5,
+        FormKind::CreateProject | FormKind::ModifyProject { .. } => 3,
+        FormKind::CreateTask | FormKind::ModifyTask { .. } => 5,
     }
 }
 
@@ -130,6 +163,8 @@ pub fn handle_key(
         AppMode::MultiStepForm { .. } => form::handle_form(state, key, engine)?,
         AppMode::ConfirmPrompt { .. } => confirm::handle_confirm(state, key, engine)?,
     }
+
+    update_stats(state, engine)?;
 
     Ok(false)
 }
@@ -335,5 +370,69 @@ mod tests {
         handle_key(&mut state, make_key(KeyCode::Char('y')), &engine).unwrap();
         assert!(matches!(state.mode, AppMode::Browsing));
         assert_eq!(state.projects.len(), 0);
+    }
+
+    #[test]
+    fn test_app_stats_tracking() {
+        let engine = Engine::open(":memory:").unwrap();
+        engine.create_project("p1", "desc1").unwrap();
+        engine.create_project("p2", "desc2").unwrap();
+
+        // Add a task to p1
+        engine.create_task("p1", "t1", "d", 1, None).unwrap();
+
+        // Initialize state
+        let mut state = AppState::new(&engine).unwrap();
+
+        // Initially global stats should show 1 task, done 0, pending 1
+        assert_eq!(state.stats.total, 1);
+        assert_eq!(state.stats.pending, 1);
+        // And project stats should be for "p1" (selected = 0)
+        assert_eq!(state.project_stats.total, 1);
+        assert_eq!(state.project_stats.pending, 1);
+
+        // Move to p2 (selected = 1)
+        handle_key(&mut state, make_key(KeyCode::Char('j')), &engine).unwrap();
+        assert_eq!(state.selected, 1);
+        // project stats should update for "p2", which has 0 tasks
+        assert_eq!(state.project_stats.total, 0);
+
+        // Enter project p2
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        assert!(matches!(state.context, AppContext::Project { .. }));
+
+        // Trigger search and type a non-existent task to create it
+        handle_key(&mut state, make_key(KeyCode::Char('/')), &engine).unwrap();
+        for c in "new_task".chars() {
+            handle_key(&mut state, make_key(KeyCode::Char(c)), &engine).unwrap();
+        }
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap(); // Start form
+
+        // Fill form steps:
+        // Description
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        // Tags
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        // Priority
+        handle_key(&mut state, make_key(KeyCode::Char('2')), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        // Due date
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+
+        // Now stats should be updated!
+        // Global stats total should be 2 (1 in p1, 1 in p2)
+        assert_eq!(state.stats.total, 2);
+        // Project stats for current project (p2) should be 1
+        assert_eq!(state.project_stats.total, 1);
+        assert_eq!(state.project_stats.p2, 1);
+
+        // Toggle task done
+        assert_eq!(state.selected, 0);
+        handle_key(&mut state, make_key(KeyCode::Char(' ')), &engine).unwrap();
+        // Now pending should be 0, done 1 for p2 project stats, and 1 done in global
+        assert_eq!(state.project_stats.done, 1);
+        assert_eq!(state.project_stats.pending, 0);
+        assert_eq!(state.stats.done, 1);
+        assert_eq!(state.stats.pending, 1); // 1 pending in p1, 0 in p2
     }
 }

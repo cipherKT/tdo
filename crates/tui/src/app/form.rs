@@ -25,43 +25,59 @@ pub(super) fn handle_form(
             }
         }
         KeyCode::Enter => {
-            // extract what we need before mutating state
-            let (kind_is_project, step, total, answers, current, name) =
-                if let AppMode::MultiStepForm {
-                    kind,
-                    step,
-                    answers,
-                    current_input,
-                    name,
-                } = &state.mode
-                {
-                    let is_project = matches!(kind, FormKind::CreateProject);
-                    let total = form_total_steps(kind);
-                    (
-                        is_project,
-                        *step,
-                        total,
-                        answers.clone(),
-                        current_input.clone(),
-                        name.clone(),
-                    )
-                } else {
-                    return Ok(());
-                };
+            let (form_kind, step, total, answers, current, name) = if let AppMode::MultiStepForm {
+                kind,
+                step,
+                answers,
+                current_input,
+                name,
+            } = &state.mode
+            {
+                let total = form_total_steps(kind);
+                (
+                    kind.clone(),
+                    *step,
+                    total,
+                    answers.clone(),
+                    current_input.clone(),
+                    name.clone(),
+                )
+            } else {
+                return Ok(());
+            };
 
             let mut new_answers = answers.clone();
-            new_answers.push(current.clone());
+            // for modify forms, answers is pre-filled — replace the current step's value
+            // with what the user actually typed
+            if step < new_answers.len() {
+                new_answers[step] = current.clone();
+            } else {
+                new_answers.push(current.clone());
+            }
             let next_step = step + 1;
 
             if next_step >= total {
-                // all fields collected — submit
-                if kind_is_project {
-                    submit_create_project(state, engine, &new_answers)?;
-                } else {
-                    submit_create_task(state, engine, &new_answers, &name)?;
+                match &form_kind {
+                    FormKind::CreateProject => {
+                        submit_create_project(state, engine, &new_answers)?;
+                    }
+                    FormKind::CreateTask => {
+                        submit_create_task(state, engine, &new_answers, &name)?;
+                    }
+                    FormKind::ModifyProject { original_name } => {
+                        submit_modify_project(state, engine, &new_answers, &original_name.clone())?;
+                    }
+                    FormKind::ModifyTask { original_name } => {
+                        submit_modify_task(
+                            state,
+                            engine,
+                            &new_answers,
+                            &original_name.clone(),
+                            &name,
+                        )?;
+                    }
                 }
             } else {
-                // advance to next step
                 if let AppMode::MultiStepForm {
                     step,
                     answers,
@@ -70,8 +86,8 @@ pub(super) fn handle_form(
                 } = &mut state.mode
                 {
                     *step = next_step;
+                    *current_input = new_answers.get(next_step).cloned().unwrap_or_default();
                     *answers = new_answers;
-                    *current_input = String::new();
                 }
             }
         }
@@ -91,7 +107,6 @@ fn submit_create_project(
 
     match engine.create_project(name, description) {
         Ok(_) => {
-            // add tags if any were provided
             if !tags_raw.is_empty() {
                 let tags: Vec<&str> = tags_raw
                     .split_whitespace()
@@ -105,7 +120,6 @@ fn submit_create_project(
             state.selected = 0;
         }
         Err(e) => {
-            // for now just go back to browsing — later we can show the error
             state.mode = AppMode::Browsing;
             eprintln!("error creating project: {}", e);
         }
@@ -150,6 +164,112 @@ fn submit_create_task(
         Err(e) => {
             state.mode = AppMode::Browsing;
             eprintln!("error creating task: {}", e);
+        }
+    }
+    Ok(())
+}
+
+fn submit_modify_project(
+    state: &mut AppState,
+    engine: &Engine,
+    answers: &[String],
+    original_name: &str,
+) -> anyhow::Result<()> {
+    let new_name = answers.get(0).map(|s| s.as_str()).unwrap_or("");
+    let description = answers.get(1).map(|s| s.as_str()).unwrap_or("");
+    let tags_raw = answers.get(2).map(|s| s.as_str()).unwrap_or("");
+
+    let patch = engine::ProjectPatch {
+        name: if new_name != original_name {
+            Some(new_name.to_string())
+        } else {
+            None
+        },
+        description: Some(description.to_string()),
+    };
+
+    match engine.modify_project(original_name, patch) {
+        Ok(_) => {
+            if !tags_raw.is_empty() {
+                let lookup_name = if new_name != original_name {
+                    new_name
+                } else {
+                    original_name
+                };
+                let tags: Vec<&str> = tags_raw
+                    .split_whitespace()
+                    .map(|t| t.trim_start_matches('#'))
+                    .collect();
+                let _ = engine.add_tags_to_project(lookup_name, &tags);
+            }
+            state.projects = engine.list_projects()?;
+            state.filtered_projects = (0..state.projects.len()).collect();
+            state.mode = AppMode::Browsing;
+            state.selected = 0;
+        }
+        Err(e) => {
+            state.mode = AppMode::Browsing;
+            eprintln!("error modifying project: {}", e);
+        }
+    }
+    Ok(())
+}
+
+fn submit_modify_task(
+    state: &mut AppState,
+    engine: &Engine,
+    answers: &[String],
+    original_name: &str,
+    project_name: &str,
+) -> anyhow::Result<()> {
+    let new_name = answers.get(0).map(|s| s.as_str()).unwrap_or("");
+    let description = answers.get(1).map(|s| s.as_str()).unwrap_or("");
+    let tags_raw = answers.get(2).map(|s| s.as_str()).unwrap_or("");
+    let priority: i64 = answers.get(3).and_then(|s| s.parse().ok()).unwrap_or(3);
+    let due_date = answers.get(4).and_then(|s| {
+        if s.is_empty() {
+            None
+        } else {
+            chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
+                .ok()
+                .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc())
+        }
+    });
+
+    let patch = engine::TaskPatch {
+        name: if new_name != original_name {
+            Some(new_name.to_string())
+        } else {
+            None
+        },
+        description: Some(description.to_string()),
+        priority: Some(priority),
+        due_date: Some(due_date),
+        done: None,
+    };
+
+    match engine.modify_task(project_name, original_name, patch) {
+        Ok(_) => {
+            if !tags_raw.is_empty() {
+                let lookup_name = if new_name != original_name {
+                    new_name
+                } else {
+                    original_name
+                };
+                let tags: Vec<&str> = tags_raw
+                    .split_whitespace()
+                    .map(|t| t.trim_start_matches('#'))
+                    .collect();
+                let _ = engine.add_tags_to_task(project_name, lookup_name, &tags);
+            }
+            state.tasks = engine.list_tasks(project_name)?;
+            state.filtered_tasks = (0..state.tasks.len()).collect();
+            state.mode = AppMode::Browsing;
+            state.selected = 0;
+        }
+        Err(e) => {
+            state.mode = AppMode::Browsing;
+            eprintln!("error modifying task: {}", e);
         }
     }
     Ok(())
