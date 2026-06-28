@@ -30,8 +30,8 @@ fn main() {
             Ok(Some(nt)) => {
                 let json = serde_json::json!({
                     "name": nt.task.name,
-                    "due_date": nt.task.due_date,
-                    "project_name": nt.project_name
+                    "due": nt.task.due_date,
+                    "project": nt.project_name
                 });
                 println!("{}", json);
             }
