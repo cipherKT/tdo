@@ -9,6 +9,7 @@ pub(super) fn handle_form(
     use crossterm::event::KeyCode;
 
     let mut submit_data = None;
+    let mut exit_form = false;
 
     {
         let (form_kind, step, answers, current_input, warning, in_insert_mode, name) =
@@ -40,16 +41,6 @@ pub(super) fn handle_form(
         if *in_insert_mode {
             match key.code {
                 KeyCode::Esc => {
-                    let check = if *step == 2 {
-                        validate_tags(current_input)
-                    } else {
-                        Ok(())
-                    };
-                    if let Err(err_msg) = check {
-                        *warning = Some(err_msg);
-                    } else {
-                        *warning = None;
-                    }
                     if *step < answers.len() {
                         answers[*step] = current_input.clone();
                     } else {
@@ -59,76 +50,59 @@ pub(super) fn handle_form(
                 }
                 KeyCode::Char(c) => {
                     current_input.push(c);
-                    *warning = None;
                 }
                 KeyCode::Backspace => {
                     current_input.pop();
-                    *warning = None;
                 }
                 _ => {}
             }
         } else {
             match key.code {
                 KeyCode::Esc => {
-                    state.mode = AppMode::Browsing;
-                    state.filtered_projects = (0..state.projects.len()).collect();
-                    state.filtered_tasks = (0..state.tasks.len()).collect();
+                    exit_form = true;
                 }
                 KeyCode::Char('j') => {
-                    *warning = None;
                     *step = (*step + 1) % total;
                 }
                 KeyCode::Char('k') => {
-                    *warning = None;
                     *step = if *step == 0 { total - 1 } else { *step - 1 };
                 }
                 KeyCode::Char('i') => {
                     let initial = answers.get(*step).cloned().unwrap_or_default();
                     *current_input = initial;
                     *in_insert_mode = true;
-                    *warning = None;
                 }
                 KeyCode::Enter => {
-                    let tags_val = answers.get(2).map(|s| s.as_str()).unwrap_or("");
-                    if let Err(err_msg) = validate_tags(tags_val) {
+                    if let Some((err_msg, err_step)) =
+                        get_form_error(&form_kind, *step, answers, current_input, *in_insert_mode)
+                    {
                         *warning = Some(err_msg);
-                        *step = 2;
+                        *step = err_step;
                         return Ok(());
                     }
-                    if total > 3 {
-                        let prio_val = answers.get(3).map(|s| s.as_str()).unwrap_or("");
-                        if !prio_val.is_empty() {
-                            if let Ok(val) = prio_val.parse::<i64>() {
-                                if !(1..=3).contains(&val) {
-                                    *warning = Some("Priority must be 1, 2, or 3".to_string());
-                                    *step = 3;
-                                    return Ok(());
-                                }
-                            } else {
-                                *warning =
-                                    Some("Priority must be a number (1, 2, or 3)".to_string());
-                                *step = 3;
-                                return Ok(());
-                            }
-                        }
-                    }
-                    if total > 4 {
-                        let due_val = answers.get(4).map(|s| s.as_str()).unwrap_or("");
-                        if !due_val.is_empty()
-                            && chrono::NaiveDate::parse_from_str(due_val, "%Y-%m-%d").is_err()
-                        {
-                            *warning =
-                                Some("Due date must be in YYYY-MM-DD format or blank".to_string());
-                            *step = 4;
-                            return Ok(());
-                        }
-                    }
 
-                    submit_data = Some((form_kind, answers.clone(), name));
+                    submit_data = Some((form_kind.clone(), answers.clone(), name));
                 }
                 _ => {}
             }
         }
+
+        // Automatically update the warning state based on all form inputs.
+        if !exit_form {
+            if let Some((err_msg, _)) =
+                get_form_error(&form_kind, *step, answers, current_input, *in_insert_mode)
+            {
+                *warning = Some(err_msg);
+            } else {
+                *warning = None;
+            }
+        }
+    }
+
+    if exit_form {
+        state.mode = AppMode::Browsing;
+        state.filtered_projects = (0..state.projects.len()).collect();
+        state.filtered_tasks = (0..state.tasks.len()).collect();
     }
 
     if let Some((form_kind, answers, name)) = submit_data {
@@ -351,4 +325,72 @@ fn validate_tags(tags_raw: &str) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn validate_priority(prio_val: &str) -> Result<(), String> {
+    if prio_val.is_empty() {
+        return Ok(());
+    }
+    if let Ok(val) = prio_val.parse::<i64>() {
+        if !(1..=3).contains(&val) {
+            return Err("Priority must be 1, 2, or 3".to_string());
+        }
+    } else {
+        return Err("Priority must be a number (1, 2, or 3)".to_string());
+    }
+    Ok(())
+}
+
+fn validate_due_date(due_val: &str) -> Result<(), String> {
+    if due_val.is_empty() {
+        return Ok(());
+    }
+    if chrono::NaiveDate::parse_from_str(due_val, "%Y-%m-%d").is_err() {
+        return Err("Due date must be in YYYY-MM-DD format or blank".to_string());
+    }
+    Ok(())
+}
+
+fn get_form_error(
+    form_kind: &FormKind,
+    step: usize,
+    answers: &[String],
+    current_input: &str,
+    in_insert_mode: bool,
+) -> Option<(String, usize)> {
+    let get_val = |idx: usize| -> String {
+        if idx == step && in_insert_mode {
+            current_input.to_string()
+        } else {
+            answers.get(idx).cloned().unwrap_or_default()
+        }
+    };
+
+    // 1. Validate tags (index 2)
+    if !(in_insert_mode && step == 2) {
+        let tags_val = get_val(2);
+        if let Err(err_msg) = validate_tags(&tags_val) {
+            return Some((err_msg, 2));
+        }
+    }
+
+    let total = form_total_steps(form_kind);
+
+    // 2. Validate priority (index 3)
+    if total > 3 && !(in_insert_mode && step == 3) {
+        let prio_val = get_val(3);
+        if let Err(err_msg) = validate_priority(&prio_val) {
+            return Some((err_msg, 3));
+        }
+    }
+
+    // 3. Validate due date (index 4)
+    if total > 4 && !(in_insert_mode && step == 4) {
+        let due_val = get_val(4);
+        if let Err(err_msg) = validate_due_date(&due_val) {
+            return Some((err_msg, 4));
+        }
+    }
+
+    None
 }
