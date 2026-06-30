@@ -32,9 +32,18 @@ if [[ -z "$name" || -z "$due" ]]; then
 fi
 
 # --- relative date math ------------------------------------------------
-today_epoch=$(date -d "today" +%s)
-due_epoch=$(date -d "$due" +%s 2>/dev/null || echo "$today_epoch")
-diff_days=$(((due_epoch - today_epoch) / 86400))
+today_date=$(date -d "today" +%Y-%m-%d)
+today_epoch=$(date -d "$today_date" +%s)
+
+due_date=$(date -d "$due" +%Y-%m-%d 2>/dev/null || echo "$today_date")
+due_epoch=$(date -d "$due_date" +%s)
+
+diff_seconds=$((due_epoch - today_epoch))
+if ((diff_seconds >= 0)); then
+  diff_days=$(((diff_seconds + 43200) / 86400))
+else
+  diff_days=$(((diff_seconds - 43200) / 86400))
+fi
 
 if ((diff_days < 0)); then
   rel="overdue $((-diff_days))d"

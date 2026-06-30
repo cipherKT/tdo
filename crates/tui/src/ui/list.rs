@@ -119,8 +119,8 @@ pub(super) fn render_tasks_list(frame: &mut Frame, state: &AppState, area: Rect)
 
         let due_str = match &task.due_date {
             Some(d) => {
-                let now = chrono::Utc::now();
-                let diff = d.signed_duration_since(now).num_days();
+                let today = chrono::Local::now().date_naive();
+                let diff = (d.date_naive() - today).num_days();
                 if diff < 0 {
                     format!("overdue {}d", diff.abs())
                 } else if diff == 0 {

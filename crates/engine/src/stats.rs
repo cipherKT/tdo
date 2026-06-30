@@ -9,8 +9,8 @@ impl Engine {
             SELECT
               COUNT(*),
               COALESCE(SUM(done), 0),
-              COALESCE(SUM(CASE WHEN done = 0 AND (due_date IS NULL OR due_date >= DATE('now')) THEN 1 ELSE 0 END), 0),
-              COALESCE(SUM(CASE WHEN done = 0 AND due_date < DATE('now') THEN 1 ELSE 0 END), 0),
+              COALESCE(SUM(CASE WHEN done = 0 AND (due_date IS NULL OR DATE(due_date) >= DATE('now', 'localtime')) THEN 1 ELSE 0 END), 0),
+              COALESCE(SUM(CASE WHEN done = 0 AND DATE(due_date) < DATE('now', 'localtime') THEN 1 ELSE 0 END), 0),
               COALESCE(SUM(CASE WHEN priority = 1 THEN 1 ELSE 0 END), 0),
               COALESCE(SUM(CASE WHEN priority = 2 THEN 1 ELSE 0 END), 0),
               COALESCE(SUM(CASE WHEN priority = 3 THEN 1 ELSE 0 END), 0),
@@ -41,8 +41,8 @@ impl Engine {
             SELECT
               COUNT(*),
               COALESCE(SUM(done), 0),
-              COALESCE(SUM(CASE WHEN done = 0 AND (due_date IS NULL OR due_date >= DATE('now')) THEN 1 ELSE 0 END), 0),
-              COALESCE(SUM(CASE WHEN done = 0 AND due_date < DATE('now') THEN 1 ELSE 0 END), 0),
+              COALESCE(SUM(CASE WHEN done = 0 AND (due_date IS NULL OR DATE(due_date) >= DATE('now', 'localtime')) THEN 1 ELSE 0 END), 0),
+              COALESCE(SUM(CASE WHEN done = 0 AND DATE(due_date) < DATE('now', 'localtime') THEN 1 ELSE 0 END), 0),
               COALESCE(SUM(CASE WHEN priority = 1 THEN 1 ELSE 0 END), 0),
               COALESCE(SUM(CASE WHEN priority = 2 THEN 1 ELSE 0 END), 0),
               COALESCE(SUM(CASE WHEN priority = 3 THEN 1 ELSE 0 END), 0),
