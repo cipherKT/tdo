@@ -7,6 +7,7 @@ A terminal-native project and task manager built for Omarchy/Hyprland. Keyboard-
 - **Project and task management** — organize work into projects, each with tasks carrying priority, due dates, and tags
 - **Fuzzy search** — press `/` to search and navigate, or create new projects/tasks when no match is found
 - **Vim-style keybindings** — `j`/`k` to navigate, `i` to edit, `d` to delete, `space` to toggle done
+- **Smart date parsing** — use natural shortcuts (`today`, `tomorrow`, `mon`), relative offsets (`+3`, `+1w`, `+1m`), or day-of-month (`15`) with instant normalization
 - **Stats pane** — live task counts with proportional bars and a per-project breakdown
 - **Metadata pane** — description, tags, priority, and due date for the selected item
 - **Waybar integration** — shows your earliest pending task with a relative due date, updates every 30 seconds
@@ -87,6 +88,17 @@ Reload waybar after saving.
 | `esc` (insert) | Confirm field, exit insert mode |
 | `enter` | Save form |
 | `esc` (normal) | Cancel form |
+
+### Smart Date Inputs
+
+When editing the **due date** field, you don't need to type the full `YYYY-MM-DD` date. You can enter:
+- **Relative offsets**: `+3` or `+3d` (3 days from now), `+1w` (1 week from now), `+2m` (2 months from now)
+- **Shortcuts**: `today`, `tomorrow`, `tod`, `tom`, `t`, `tm`
+- **Weekdays**: `mon`, `tue`, `wednesday` etc. (resolves to the next occurrence of that weekday)
+- **Partial dates**: `MM-DD` or `MM/DD` (e.g. `07-04` or `7/4`, assuming current year)
+- **Day of month**: `DD` (e.g. `15` — assumes current month if the day is in the future, otherwise next month)
+
+Upon exiting insert mode (`esc`), the shortcut is normalized instantly to `YYYY-MM-DD`.
 
 ## Data
 

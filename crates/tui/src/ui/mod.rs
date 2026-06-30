@@ -161,7 +161,16 @@ fn render_form_modal(
     lines.push(Line::from("─".repeat(inner_width)));
 
     let footer_text = if in_insert_mode {
-        "[Insert Mode]  Esc: back to normal  ·  Type to edit"
+        match (kind, step) {
+            (_, 2) => "[Insert]  Esc: accept  ·  Enter tags starting with #, separated by space",
+            (crate::app::FormKind::CreateTask | crate::app::FormKind::ModifyTask { .. }, 3) => {
+                "[Insert]  Esc: accept  ·  Enter priority (1, 2, or 3)"
+            }
+            (crate::app::FormKind::CreateTask | crate::app::FormKind::ModifyTask { .. }, 4) => {
+                "[Insert]  Esc: accept  ·  e.g. today, tomorrow, +3, +1w, mon, 07-04, 15"
+            }
+            _ => "[Insert Mode]  Esc: back to normal  ·  Type to edit",
+        }
     } else {
         "[Normal Mode]  j/k: navigate  ·  i: edit field  ·  Enter: save  ·  Esc: cancel"
     };

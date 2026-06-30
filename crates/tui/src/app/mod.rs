@@ -2,6 +2,7 @@ use engine::Engine;
 
 mod browsing;
 mod confirm;
+pub(crate) mod date_parser;
 mod form;
 mod search;
 
@@ -155,15 +156,15 @@ pub fn form_prompt(kind: &FormKind, step: usize) -> &'static str {
         FormKind::CreateProject | FormKind::ModifyProject { .. } => match step {
             0 => "name",
             1 => "description",
-            2 => "tags (space-separated, e.g. #security #recon)",
+            2 => "tags",
             _ => "",
         },
         FormKind::CreateTask | FormKind::ModifyTask { .. } => match step {
             0 => "name",
             1 => "description",
-            2 => "tags (space-separated)",
-            3 => "priority (1/2/3)",
-            4 => "due date (YYYY-MM-DD or leave blank)",
+            2 => "tags",
+            3 => "priority",
+            4 => "due date",
             _ => "",
         },
     }
@@ -422,6 +423,72 @@ mod tests {
         assert_eq!(state.tasks.len(), 1);
         assert_eq!(state.tasks[0].name, "task_test");
         assert_eq!(state.tasks[0].priority, 1);
+    }
+
+    #[test]
+    fn test_app_task_creation_form_with_relative_due_date() {
+        let engine = Engine::open(":memory:").unwrap();
+        engine.create_project("proj", "desc").unwrap();
+
+        let mut state = AppState::new(&engine).unwrap();
+
+        // Enter project "proj" by hitting Enter on it
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        assert!(matches!(state.context, AppContext::Project { .. }));
+
+        // Enter search mode
+        handle_key(&mut state, make_key(KeyCode::Char('/')), &engine).unwrap();
+
+        // Search for task "task_test"
+        for c in "task_test".chars() {
+            handle_key(&mut state, make_key(KeyCode::Char(c)), &engine).unwrap();
+        }
+
+        // Hit enter to start task creation form
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        assert!(matches!(
+            state.mode,
+            AppMode::MultiStepForm {
+                kind: FormKind::CreateTask,
+                step: 0,
+                ..
+            }
+        ));
+
+        // Go to Step 4: due date
+        for _ in 0..4 {
+            handle_key(&mut state, make_key(KeyCode::Char('j')), &engine).unwrap();
+        }
+
+        // Edit due date field
+        handle_key(&mut state, make_key(KeyCode::Char('i')), &engine).unwrap();
+        // Type "+3"
+        handle_key(&mut state, make_key(KeyCode::Char('+')), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Char('3')), &engine).unwrap();
+        // Exit insert mode - this should normalize the date
+        handle_key(&mut state, make_key(KeyCode::Esc), &engine).unwrap();
+
+        // Verify it was normalized in AppMode answers
+        if let AppMode::MultiStepForm { answers, .. } = &state.mode {
+            let normalized = &answers[4];
+            let expected_date = chrono::Local::now().date_naive() + chrono::Days::new(3);
+            assert_eq!(normalized, &expected_date.format("%Y-%m-%d").to_string());
+        } else {
+            panic!("expected MultiStepForm mode");
+        }
+
+        // Submit form
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+
+        // Verify task was created with correct date
+        assert!(matches!(state.mode, AppMode::Browsing));
+        assert_eq!(state.tasks.len(), 1);
+        let task = &state.tasks[0];
+        let expected_date = (chrono::Local::now().date_naive() + chrono::Days::new(3))
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc();
+        assert_eq!(task.due_date, Some(expected_date));
     }
 
     #[test]

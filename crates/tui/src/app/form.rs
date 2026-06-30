@@ -41,10 +41,18 @@ pub(super) fn handle_form(
         if *in_insert_mode {
             match key.code {
                 KeyCode::Esc => {
+                    let mut val = current_input.clone();
+                    if *step == 4 && !val.trim().is_empty() {
+                        let today = chrono::Local::now().date_naive();
+                        if let Ok(d) = super::date_parser::parse_due_date(&val, today) {
+                            val = d.format("%Y-%m-%d").to_string();
+                            *current_input = val.clone();
+                        }
+                    }
                     if *step < answers.len() {
-                        answers[*step] = current_input.clone();
+                        answers[*step] = val;
                     } else {
-                        answers.push(current_input.clone());
+                        answers.push(val);
                     }
                     *in_insert_mode = false;
                 }
@@ -169,7 +177,8 @@ fn submit_create_task(
         if s.is_empty() {
             None
         } else {
-            chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
+            let today = chrono::Local::now().date_naive();
+            super::date_parser::parse_due_date(s, today)
                 .ok()
                 .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc())
         }
@@ -258,7 +267,8 @@ fn submit_modify_task(
         if s.is_empty() {
             None
         } else {
-            chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
+            let today = chrono::Local::now().date_naive();
+            super::date_parser::parse_due_date(s, today)
                 .ok()
                 .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc())
         }
@@ -345,10 +355,8 @@ fn validate_due_date(due_val: &str) -> Result<(), String> {
     if due_val.is_empty() {
         return Ok(());
     }
-    if chrono::NaiveDate::parse_from_str(due_val, "%Y-%m-%d").is_err() {
-        return Err("Due date must be in YYYY-MM-DD format or blank".to_string());
-    }
-    Ok(())
+    let today = chrono::Local::now().date_naive();
+    super::date_parser::parse_due_date(due_val, today).map(|_| ())
 }
 
 fn get_form_error(
