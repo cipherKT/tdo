@@ -223,4 +223,31 @@ impl Engine {
             .collect::<Result<Vec<String>, _>>()?;
         Ok(names)
     }
+
+    pub fn list_pending_today_tasks(&self) -> Result<Vec<NextTask>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT t.id, t.project_id, t.name, t.description, t.priority, t.due_date, t.done, t.created_at, p.name as project_name
+             FROM tasks t
+             JOIN projects p ON t.project_id = p.id
+             WHERE t.done = 0 AND t.due_date IS NOT NULL AND DATE(t.due_date) = DATE('now', 'localtime')
+             ORDER BY t.priority ASC, t.name ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(NextTask {
+                task: Task {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    name: row.get(2)?,
+                    description: row.get(3)?,
+                    priority: row.get(4)?,
+                    due_date: row.get(5)?,
+                    done: row.get(6)?,
+                    created_at: row.get(7)?,
+                },
+                project_name: row.get(8)?,
+            })
+        })?;
+        let tasks = rows.collect::<Result<Vec<_>, _>>()?;
+        Ok(tasks)
+    }
 }

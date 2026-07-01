@@ -205,4 +205,31 @@ mod tests {
         assert_eq!(g_stats.total, 2);
         assert_eq!(g_stats.done, 1);
     }
+
+    #[test]
+    fn test_pending_today_tasks() {
+        let engine = Engine::open(":memory:").unwrap();
+        engine.create_project("proj1", "desc1").unwrap();
+        engine.create_project("proj2", "desc2").unwrap();
+
+        let today = chrono::Utc::now();
+        engine
+            .create_task("proj1", "task1", "d", 1, Some(today))
+            .unwrap();
+        engine
+            .create_task("proj2", "task2", "d", 2, Some(today))
+            .unwrap();
+
+        let tomorrow = today + chrono::Days::new(1);
+        engine
+            .create_task("proj1", "task3", "d", 3, Some(tomorrow))
+            .unwrap();
+
+        let pending_today = engine.list_pending_today_tasks().unwrap();
+        assert_eq!(pending_today.len(), 2);
+        assert_eq!(pending_today[0].task.name, "task1");
+        assert_eq!(pending_today[0].project_name, "proj1");
+        assert_eq!(pending_today[1].task.name, "task2");
+        assert_eq!(pending_today[1].project_name, "proj2");
+    }
 }

@@ -32,10 +32,16 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         ])
         .split(outer[1]);
 
+    let right_panes = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(middle[2]);
+
     header::render_header(frame, state, outer[0]);
     metadata::render_metadata(frame, state, middle[0]);
     list::render_active_list(frame, state, middle[1]);
-    analytics::render_analytics(frame, state, middle[2]);
+    analytics::render_analytics(frame, state, right_panes[0]);
+    analytics::render_pending_today(frame, state, right_panes[1]);
     hint::render_hint_bar(frame, state, outer[2]);
 
     if let AppMode::MultiStepForm {

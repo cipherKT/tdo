@@ -182,3 +182,56 @@ fn render_thin_progress_bar(
         ),
     ])
 }
+
+pub(super) fn render_pending_today(frame: &mut Frame, state: &AppState, area: Rect) {
+    let block = Block::default()
+        .title(" pending today ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(state.theme.border_inactive));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+
+    if state.pending_today.is_empty() {
+        let empty_msg = Paragraph::new(Line::from(vec![Span::styled(
+            "No pending tasks for today.",
+            Style::default().fg(state.theme.label),
+        )]));
+        frame.render_widget(empty_msg, inner);
+        return;
+    }
+
+    let mut lines = Vec::new();
+    for (idx, nt) in state.pending_today.iter().enumerate() {
+        if idx as u16 >= inner.height {
+            break;
+        }
+        let priority_span = match nt.task.priority {
+            1 => Span::styled(" P1", Style::default().fg(state.theme.status_overdue)),
+            2 => Span::styled(" P2", Style::default().fg(state.theme.status_pending)),
+            3 => Span::styled(" P3", Style::default().fg(state.theme.status_done)),
+            _ => Span::styled(" P4", Style::default().fg(state.theme.label)),
+        };
+
+        let line = Line::from(vec![
+            Span::styled("• ", Style::default().fg(state.theme.label)),
+            Span::styled(
+                nt.task.name.clone(),
+                Style::default().fg(state.theme.highlight),
+            ),
+            Span::styled(
+                format!(" ({})", nt.project_name),
+                Style::default().fg(state.theme.primary_accent),
+            ),
+            priority_span,
+        ]);
+        lines.push(line);
+    }
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, inner);
+}

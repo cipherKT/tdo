@@ -51,6 +51,7 @@ pub struct AppState {
     pub project_stats: engine::Stats,
     pub selected_item_tags: Vec<String>,
     pub projects_task_counts: Vec<(String, i64)>,
+    pub pending_today: Vec<engine::NextTask>,
     pub theme: crate::theme::Theme,
 }
 
@@ -85,6 +86,8 @@ impl AppState {
             projects_task_counts.push((proj.name.clone(), stats.total));
         }
 
+        let pending_today = engine.list_pending_today_tasks()?;
+
         Ok(AppState {
             context: AppContext::Home,
             mode: AppMode::Browsing,
@@ -97,6 +100,7 @@ impl AppState {
             project_stats,
             selected_item_tags,
             projects_task_counts,
+            pending_today,
             theme: crate::theme::Theme::load(),
         })
     }
@@ -110,6 +114,7 @@ pub fn update_stats(state: &mut AppState, engine: &Engine) -> anyhow::Result<()>
         projects_task_counts.push((proj.name.clone(), stats.total));
     }
     state.projects_task_counts = projects_task_counts;
+    state.pending_today = engine.list_pending_today_tasks()?;
 
     match &state.context {
         AppContext::Home => {
@@ -667,5 +672,25 @@ mod tests {
 
         let tags = engine.get_tags_for_project("new_proj").unwrap();
         assert_eq!(tags.len(), 3);
+    }
+
+    #[test]
+    fn test_app_pending_today() {
+        let engine = Engine::open(":memory:").unwrap();
+        engine.create_project("proj", "desc").unwrap();
+        let today = chrono::Utc::now();
+        engine
+            .create_task("proj", "task1", "desc", 1, Some(today))
+            .unwrap();
+
+        let mut state = AppState::new(&engine).unwrap();
+        assert_eq!(state.pending_today.len(), 1);
+        assert_eq!(state.pending_today[0].task.name, "task1");
+        assert_eq!(state.pending_today[0].project_name, "proj");
+
+        // Complete the task and see if it's removed from pending_today
+        engine.toggle_done("proj", "task1").unwrap();
+        update_stats(&mut state, &engine).unwrap();
+        assert_eq!(state.pending_today.len(), 0);
     }
 }

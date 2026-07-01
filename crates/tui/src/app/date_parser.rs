@@ -31,7 +31,11 @@ pub fn parse_due_date(input: &str, today: NaiveDate) -> Result<NaiveDate, String
                 return Ok(today + Days::new(n * 7));
             }
         } else if let Some(n_str) = suffix.strip_suffix('m') {
-            if let Some(d) = n_str.parse::<u32>().ok().and_then(|n| today.checked_add_months(Months::new(n))) {
+            if let Some(d) = n_str
+                .parse::<u32>()
+                .ok()
+                .and_then(|n| today.checked_add_months(Months::new(n)))
+            {
                 return Ok(d);
             }
         } else if let Some(n_str) = suffix.strip_suffix('d') {
@@ -74,8 +78,12 @@ pub fn parse_due_date(input: &str, today: NaiveDate) -> Result<NaiveDate, String
     };
 
     if parts.len() == 2
-        && let Some(date) = parts[0].parse::<u32>().ok()
-            .and_then(|m| parts[1].parse::<u32>().ok().and_then(|d| NaiveDate::from_ymd_opt(today.year(), m, d)))
+        && let Some(date) = parts[0].parse::<u32>().ok().and_then(|m| {
+            parts[1]
+                .parse::<u32>()
+                .ok()
+                .and_then(|d| NaiveDate::from_ymd_opt(today.year(), m, d))
+        })
     {
         return Ok(date);
     }
