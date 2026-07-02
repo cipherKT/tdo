@@ -69,10 +69,10 @@ pub(super) fn handle_form(
                 KeyCode::Esc => {
                     exit_form = true;
                 }
-                KeyCode::Char('j') => {
+                KeyCode::Char('j') | KeyCode::Down => {
                     *step = (*step + 1) % total;
                 }
-                KeyCode::Char('k') => {
+                KeyCode::Char('k') | KeyCode::Up => {
                     *step = if *step == 0 { total - 1 } else { *step - 1 };
                 }
                 KeyCode::Char('i') => {

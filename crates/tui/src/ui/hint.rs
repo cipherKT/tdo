@@ -5,9 +5,9 @@ pub(super) fn render_hint_bar(frame: &mut Frame, state: &AppState, area: Rect) {
     match &state.mode {
         AppMode::Browsing => {
             let hint = if state.right_pane == RightPane::Calendar {
-                "  h/l: prev/next day  ·  j/k: prev/next week  ·  Tab: tasks pane  ·  Esc: focus list  ·  q quit"
+                "  h/←/l/→: prev/next day  ·  j/↓/k/↑: prev/next week  ·  Tab: tasks pane  ·  Esc: focus list  ·  q quit"
             } else {
-                "  j/k move  ·  enter open  ·  / search  ·  d delete  ·  Tab: calendar  ·  q quit"
+                "  j/↓/k/↑ move  ·  enter open  ·  / search  ·  d delete  ·  Tab: calendar  ·  q quit"
             };
             frame.render_widget(
                 Paragraph::new(hint).style(Style::default().fg(state.theme.label)),
@@ -40,7 +40,7 @@ pub(super) fn render_hint_bar(frame: &mut Frame, state: &AppState, area: Rect) {
             let content = if *in_insert_mode {
                 "  [INSERT]  Press ESC to finish editing this field"
             } else {
-                "  [NORMAL]  j/k: navigate  ·  i: edit field  ·  enter: save  ·  esc: cancel"
+                "  [NORMAL]  j/↓/k/↑: navigate  ·  i: edit field  ·  enter: save  ·  esc: cancel"
             };
             frame.render_widget(
                 Paragraph::new(content).style(Style::default().fg(state.theme.secondary_accent)),

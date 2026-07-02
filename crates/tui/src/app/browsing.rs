@@ -34,12 +34,12 @@ pub(super) fn handle_browsing(
     };
 
     match key.code {
-        KeyCode::Char('j') => {
+        KeyCode::Char('j') | KeyCode::Down => {
             if list_len > 0 {
                 state.selected = (state.selected + 1) % list_len;
             }
         }
-        KeyCode::Char('k') => {
+        KeyCode::Char('k') | KeyCode::Up => {
             if list_len > 0 {
                 state.selected = state.selected.saturating_sub(1);
             }
@@ -185,22 +185,22 @@ fn handle_calendar_key(
     use crossterm::event::KeyCode;
 
     match key.code {
-        KeyCode::Char('h') => {
+        KeyCode::Char('h') | KeyCode::Left => {
             // Move cursor left (previous day).
             move_cursor(state, -1, 0);
             refresh_calendar_day(state, engine)?;
         }
-        KeyCode::Char('l') => {
+        KeyCode::Char('l') | KeyCode::Right => {
             // Move cursor right (next day).
             move_cursor(state, 1, 0);
             refresh_calendar_day(state, engine)?;
         }
-        KeyCode::Char('j') => {
+        KeyCode::Char('j') | KeyCode::Down => {
             // Move cursor down (next week).
             move_cursor(state, 0, 1);
             refresh_calendar_day(state, engine)?;
         }
-        KeyCode::Char('k') => {
+        KeyCode::Char('k') | KeyCode::Up => {
             // Move cursor up (previous week).
             move_cursor(state, 0, -1);
             refresh_calendar_day(state, engine)?;
