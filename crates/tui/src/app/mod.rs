@@ -1,3 +1,4 @@
+use chrono::Datelike;
 use engine::Engine;
 
 mod browsing;
@@ -5,6 +6,31 @@ mod confirm;
 pub(crate) mod date_parser;
 mod form;
 mod search;
+
+/// Which pane on the right column currently has keyboard focus.
+#[derive(Clone, PartialEq)]
+pub enum RightPane {
+    PendingToday,
+    Calendar,
+}
+
+/// State for the interactive calendar widget.
+#[derive(Clone)]
+pub struct CalendarState {
+    /// Year currently shown.
+    pub year: i32,
+    /// Month currently shown (1-12).
+    pub month: u32,
+    /// Cursor column inside the month grid (0 = Mon … 6 = Sun).
+    pub cursor_col: u32,
+    /// Cursor row inside the month grid (0-based week row).
+    pub cursor_row: u32,
+    /// Tasks for the day the cursor sits on (None = not yet fetched).
+    pub day_tasks: Option<Vec<engine::NextTask>>,
+    /// The exact day the cursor is on (1-based, may be 0 when cursor is on
+    /// a padding cell before the 1st of the month).
+    pub cursor_day: u32,
+}
 
 pub enum AppContext {
     Home,
@@ -53,6 +79,10 @@ pub struct AppState {
     pub projects_task_counts: Vec<(String, i64)>,
     pub pending_today: Vec<engine::NextTask>,
     pub theme: crate::theme::Theme,
+    /// Which right-column pane has focus.
+    pub right_pane: RightPane,
+    /// Calendar widget state.
+    pub calendar: CalendarState,
 }
 
 impl AppState {
@@ -88,6 +118,22 @@ impl AppState {
 
         let pending_today = engine.list_pending_today_tasks()?;
 
+        // Initialise calendar to the current local month, cursor on today.
+        let today = chrono::Local::now().date_naive();
+        let cal = CalendarState {
+            year: today.year(),
+            month: today.month(),
+            cursor_col: today.weekday().num_days_from_monday(), // 0=Mon … 6=Sun
+            cursor_row: {
+                use chrono::NaiveDate;
+                let first = NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap();
+                let offset = first.weekday().num_days_from_monday();
+                (today.day0() + offset) / 7
+            },
+            day_tasks: None,
+            cursor_day: today.day(),
+        };
+
         Ok(AppState {
             context: AppContext::Home,
             mode: AppMode::Browsing,
@@ -102,6 +148,8 @@ impl AppState {
             projects_task_counts,
             pending_today,
             theme: crate::theme::Theme::load(),
+            right_pane: RightPane::PendingToday,
+            calendar: cal,
         })
     }
 }

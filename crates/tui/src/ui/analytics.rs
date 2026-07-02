@@ -184,10 +184,27 @@ fn render_thin_progress_bar(
 }
 
 pub(super) fn render_pending_today(frame: &mut Frame, state: &AppState, area: Rect) {
+    use crate::app::RightPane;
+    let is_focused = state.right_pane == RightPane::PendingToday;
+
+    let border_color = if is_focused {
+        state.theme.border_active
+    } else {
+        state.theme.border_inactive
+    };
+
+    let title_style = if is_focused {
+        Style::default()
+            .fg(state.theme.primary_accent)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(state.theme.label)
+    };
+
     let block = Block::default()
-        .title(" pending today ")
+        .title(Line::from(vec![Span::styled(" pending today ", title_style)]))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(state.theme.border_inactive));
+        .border_style(Style::default().fg(border_color));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);

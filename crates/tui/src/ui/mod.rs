@@ -8,6 +8,7 @@ use ratatui::{
 };
 
 mod analytics;
+mod calendar;
 mod header;
 mod hint;
 mod list;
@@ -41,7 +42,12 @@ pub fn render(frame: &mut Frame, state: &AppState) {
     metadata::render_metadata(frame, state, middle[0]);
     list::render_active_list(frame, state, middle[1]);
     analytics::render_analytics(frame, state, right_panes[0]);
-    analytics::render_pending_today(frame, state, right_panes[1]);
+    // Bottom-right pane: calendar or pending-today depending on focus.
+    if state.right_pane == crate::app::RightPane::Calendar {
+        calendar::render_calendar(frame, state, right_panes[1]);
+    } else {
+        analytics::render_pending_today(frame, state, right_panes[1]);
+    }
     hint::render_hint_bar(frame, state, outer[2]);
 
     if let AppMode::MultiStepForm {
