@@ -32,6 +32,7 @@ pub struct CalendarState {
     pub cursor_day: u32,
 }
 
+#[derive(Clone)]
 pub enum AppContext {
     Home,
     Project { name: String, id: i64 },
@@ -199,7 +200,8 @@ pub fn update_stats(state: &mut AppState, engine: &Engine) -> anyhow::Result<()>
     state.projects_task_counts = projects_task_counts;
     state.pending_today = engine.list_pending_today_tasks()?;
 
-    match &state.context {
+    let context = state.context.clone();
+    match &context {
         AppContext::Home => {
             if let Some(&proj_idx) = state.filtered_projects.get(state.selected) {
                 if let Some(project) = state.projects.get(proj_idx) {
@@ -251,7 +253,11 @@ pub fn update_stats(state: &mut AppState, engine: &Engine) -> anyhow::Result<()>
                 }
             }
             state.tasks = list;
-            state.filtered_tasks = (0..state.tasks.len()).collect();
+            if matches!(state.mode, AppMode::Search { .. }) {
+                recompute_filter(state);
+            } else {
+                state.filtered_tasks = (0..state.tasks.len()).collect();
+            }
 
             if let Some(&task_idx) = state.filtered_tasks.get(state.selected) {
                 if let Some(item) = state.tasks.get(task_idx) {
@@ -896,5 +902,39 @@ mod tests {
         } else {
             panic!("expected task");
         }
+    }
+
+    #[test]
+    fn test_app_task_creation_with_existing_tasks() {
+        let engine = Engine::open(":memory:").unwrap();
+        engine.create_project("proj", "desc").unwrap();
+        engine
+            .create_task("proj", "existing_task", "desc", 1, None)
+            .unwrap();
+
+        let mut state = AppState::new(&engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap(); // Enter project
+        assert_eq!(state.tasks.len(), 1);
+
+        // Enter search mode
+        handle_key(&mut state, make_key(KeyCode::Char('/')), &engine).unwrap();
+        assert_eq!(state.filtered_tasks.len(), 1);
+
+        // Type "new_task"
+        for c in "new_task".chars() {
+            handle_key(&mut state, make_key(KeyCode::Char(c)), &engine).unwrap();
+        }
+        assert_eq!(state.filtered_tasks.len(), 0);
+
+        // Hit enter to start task creation form
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        assert!(matches!(
+            state.mode,
+            AppMode::MultiStepForm {
+                kind: FormKind::CreateTask,
+                step: 0,
+                ..
+            }
+        ));
     }
 }
