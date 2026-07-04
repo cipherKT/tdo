@@ -4,6 +4,8 @@ use std::fmt;
 pub enum StoreError {
     NameTaken(String),
     TaskNameTaken(String),
+    SubtaskNameTaken(String),
+    PendingSubtasks(String),
     NotFound(String),
     Db(rusqlite::Error),
 }
@@ -17,8 +19,18 @@ impl fmt::Display for StoreError {
             StoreError::TaskNameTaken(name) => {
                 write!(f, "a task named '{}' already exists in this project", name)
             }
+            StoreError::SubtaskNameTaken(name) => {
+                write!(f, "a subtask named '{}' already exists for this task", name)
+            }
+            StoreError::PendingSubtasks(name) => {
+                write!(
+                    f,
+                    "cannot complete task '{}' because it has pending subtasks",
+                    name
+                )
+            }
             StoreError::NotFound(name) => {
-                write!(f, "no project or task named '{}' was found", name)
+                write!(f, "no project, task or subtask named '{}' was found", name)
             }
             StoreError::Db(e) => write!(f, "database error: {}", e),
         }

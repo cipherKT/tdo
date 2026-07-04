@@ -28,17 +28,19 @@ fn main() {
     if args.today {
         match engine.list_today_tasks() {
             Ok(tasks) => {
-                let json = serde_json::json!(tasks
-                    .iter()
-                    .map(|nt| {
-                        serde_json::json!({
-                            "name": nt.task.name,
-                            "due": nt.task.due_date,
-                            "project": nt.project_name,
-                            "priority": nt.task.priority
+                let json = serde_json::json!(
+                    tasks
+                        .iter()
+                        .map(|nt| {
+                            serde_json::json!({
+                                "name": nt.task.name,
+                                "due": nt.task.due_date,
+                                "project": nt.project_name,
+                                "priority": nt.task.priority
+                            })
                         })
-                    })
-                    .collect::<Vec<_>>());
+                        .collect::<Vec<_>>()
+                );
                 println!("{}", json);
             }
             Err(e) => {

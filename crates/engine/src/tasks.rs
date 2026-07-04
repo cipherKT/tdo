@@ -148,6 +148,17 @@ impl Engine {
         }
 
         if let Some(done) = patch.done {
+            if done {
+                let task = self.get_task_by_name(project_name, task_name)?;
+                let pending_count: i64 = self.conn.query_row(
+                    "SELECT COUNT(*) FROM subtasks WHERE task_id = ? AND done = FALSE",
+                    [task.id],
+                    |row| row.get(0),
+                )?;
+                if pending_count > 0 {
+                    return Err(StoreError::PendingSubtasks(task_name.to_string()));
+                }
+            }
             sets.push("done = ?");
             params.push(Box::new(done));
         }

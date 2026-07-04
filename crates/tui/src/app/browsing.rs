@@ -54,12 +54,24 @@ pub(super) fn handle_browsing(
         }
         KeyCode::Char(' ') => {
             if let AppContext::Project { name, .. } = &state.context {
-                if let Some(task) = state.tasks.get(state.selected) {
-                    let project_name = name.clone();
-                    let task_name = task.name.clone();
-                    engine.toggle_done(&project_name, &task_name)?;
-                    state.tasks = engine.list_tasks(&project_name)?;
-                    state.filtered_tasks = (0..state.tasks.len()).collect();
+                if let Some(item) = state.tasks.get(state.selected) {
+                    match item {
+                        super::TaskListItem::Task(task) => {
+                            let project_name = name.clone();
+                            let task_name = task.name.clone();
+                            let _ = engine.toggle_done(&project_name, &task_name);
+                        }
+                        super::TaskListItem::Subtask {
+                            subtask,
+                            parent_task_name,
+                        } => {
+                            let project_name = name.clone();
+                            let parent_name = parent_task_name.clone();
+                            let sub_name = subtask.name.clone();
+                            engine.toggle_subtask_done(&project_name, &parent_name, &sub_name)?;
+                        }
+                    }
+                    super::update_stats(state, engine)?;
                 }
             }
         }
@@ -76,24 +88,32 @@ pub(super) fn handle_browsing(
                 }
             }
             AppContext::Project { .. } => {
-                if let Some(task) = state.tasks.get(state.selected) {
-                    state.mode = AppMode::ConfirmPrompt {
-                        message: format!("delete task '{}'? (y/n)", task.name),
-                        target_name: task.name.clone(),
-                    };
+                if let Some(item) = state.tasks.get(state.selected) {
+                    match item {
+                        super::TaskListItem::Task(task) => {
+                            state.mode = AppMode::ConfirmPrompt {
+                                message: format!("delete task '{}'? (y/n)", task.name),
+                                target_name: task.name.clone(),
+                            };
+                        }
+                        super::TaskListItem::Subtask { subtask, .. } => {
+                            state.mode = AppMode::ConfirmPrompt {
+                                message: format!("delete subtask '{}'? (y/n)", subtask.name),
+                                target_name: subtask.name.clone(),
+                            };
+                        }
+                    }
                 }
             }
         },
         KeyCode::Enter => {
             if let AppContext::Home = &state.context {
                 if let Some(project) = state.projects.get(state.selected) {
-                    let tasks = engine.list_tasks(&project.name)?;
                     state.context = AppContext::Project {
                         name: project.name.clone(),
                         id: project.id,
                     };
-                    state.filtered_tasks = (0..tasks.len()).collect();
-                    state.tasks = tasks;
+                    super::update_stats(state, engine)?;
                     state.selected = 0;
                 }
             }
@@ -133,42 +153,97 @@ pub(super) fn handle_browsing(
                         current_input: String::new(),
                         warning: None,
                         in_insert_mode: false,
+                        show_save_confirm: false,
+                        save_confirm_selected: 0,
                     };
                 }
             }
             AppContext::Project { name, .. } => {
-                if let Some(task) = state.tasks.get(state.selected) {
-                    let tags = engine.get_tags_for_task(name, &task.name)?;
-                    let tags_str = tags
-                        .iter()
-                        .map(|t| format!("#{}", t.name))
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    let due_str = task
-                        .due_date
-                        .map(|d| d.format("%Y-%m-%d").to_string())
-                        .unwrap_or_default();
-                    let prefill = vec![
-                        task.name.clone(),
-                        task.description.clone(),
-                        tags_str,
-                        task.priority.to_string(),
-                        due_str,
-                    ];
-                    state.mode = AppMode::MultiStepForm {
-                        kind: FormKind::ModifyTask {
-                            original_name: task.name.clone(),
-                        },
-                        step: 0,
-                        name: name.clone(),
-                        answers: prefill.clone(),
-                        current_input: String::new(),
-                        warning: None,
-                        in_insert_mode: false,
-                    };
+                if let Some(item) = state.tasks.get(state.selected) {
+                    match item {
+                        super::TaskListItem::Task(task) => {
+                            let tags = engine.get_tags_for_task(name, &task.name)?;
+                            let tags_str = tags
+                                .iter()
+                                .map(|t| format!("#{}", t.name))
+                                .collect::<Vec<_>>()
+                                .join(" ");
+                            let due_str = task
+                                .due_date
+                                .map(|d| d.format("%Y-%m-%d").to_string())
+                                .unwrap_or_default();
+                            let prefill = vec![
+                                task.name.clone(),
+                                task.description.clone(),
+                                tags_str,
+                                task.priority.to_string(),
+                                due_str,
+                            ];
+                            state.mode = AppMode::MultiStepForm {
+                                kind: FormKind::ModifyTask {
+                                    original_name: task.name.clone(),
+                                },
+                                step: 0,
+                                name: name.clone(),
+                                answers: prefill.clone(),
+                                current_input: String::new(),
+                                warning: None,
+                                in_insert_mode: false,
+                                show_save_confirm: false,
+                                save_confirm_selected: 0,
+                            };
+                        }
+                        super::TaskListItem::Subtask {
+                            subtask,
+                            parent_task_name,
+                        } => {
+                            let prefill = vec![subtask.name.clone()];
+                            state.mode = AppMode::MultiStepForm {
+                                kind: FormKind::ModifySubtask {
+                                    parent_task_name: parent_task_name.clone(),
+                                    original_name: subtask.name.clone(),
+                                },
+                                step: 0,
+                                name: name.clone(),
+                                answers: prefill.clone(),
+                                current_input: String::new(),
+                                warning: None,
+                                in_insert_mode: false,
+                                show_save_confirm: false,
+                                save_confirm_selected: 0,
+                            };
+                        }
+                    }
                 }
             }
         },
+        KeyCode::Char('s') => {
+            if let AppContext::Project {
+                name: project_name, ..
+            } = &state.context
+            {
+                if let Some(item) = state.tasks.get(state.selected) {
+                    let parent_task_name = match item {
+                        super::TaskListItem::Task(task) => task.name.clone(),
+                        super::TaskListItem::Subtask {
+                            parent_task_name, ..
+                        } => parent_task_name.clone(),
+                    };
+                    let prefill = vec![String::new()];
+                    state.mode = AppMode::MultiStepForm {
+                        kind: FormKind::CreateSubtask { parent_task_name },
+                        step: 0,
+                        name: project_name.clone(),
+                        answers: prefill,
+                        current_input: String::new(),
+                        warning: None,
+                        in_insert_mode: true,
+                        show_save_confirm: false,
+                        save_confirm_selected: 0,
+                    };
+                }
+            }
+        }
         _ => {}
     }
     Ok(())

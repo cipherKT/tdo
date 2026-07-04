@@ -25,9 +25,24 @@ pub(super) fn handle_confirm(
                 }
                 AppContext::Project { name, .. } => {
                     let project_name = name.clone();
-                    engine.delete_task(&project_name, &target)?;
-                    state.tasks = engine.list_tasks(&project_name)?;
-                    state.filtered_tasks = (0..state.tasks.len()).collect();
+                    if let Some(item) = state.tasks.get(state.selected) {
+                        match item {
+                            super::TaskListItem::Task(task) => {
+                                engine.delete_task(&project_name, &task.name)?;
+                            }
+                            super::TaskListItem::Subtask {
+                                subtask,
+                                parent_task_name,
+                            } => {
+                                engine.delete_subtask(
+                                    &project_name,
+                                    parent_task_name,
+                                    &subtask.name,
+                                )?;
+                            }
+                        }
+                    }
+                    super::update_stats(state, engine)?;
                     state.selected = state.selected.min(state.tasks.len().saturating_sub(1));
                 }
             }

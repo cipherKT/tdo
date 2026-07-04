@@ -57,6 +57,8 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         current_input,
         warning,
         in_insert_mode,
+        show_save_confirm,
+        save_confirm_selected,
         ..
     } = &state.mode
     {
@@ -70,7 +72,64 @@ pub fn render(frame: &mut Frame, state: &AppState) {
             *in_insert_mode,
             &state.theme,
         );
+
+        if *show_save_confirm {
+            render_save_confirm_popup(frame, *save_confirm_selected, &state.theme);
+        }
     }
+}
+
+fn render_save_confirm_popup(frame: &mut Frame, selected: usize, theme: &crate::theme::Theme) {
+    let width = 36;
+    let height = 6;
+    let area = centered_rect_fixed(width, height, frame.area());
+
+    frame.render_widget(Clear, area);
+
+    let block = Block::default()
+        .title(" confirmation ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.primary_accent));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let mut lines = Vec::new();
+    lines.push(Line::from(vec![Span::styled(
+        "Save changes?",
+        Style::default().add_modifier(Modifier::BOLD),
+    )]));
+    lines.push(Line::from(""));
+
+    let save_prefix = if selected == 0 { "▶ " } else { "  " };
+    let save_style = if selected == 0 {
+        Style::default()
+            .fg(theme.highlight)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(theme.label)
+    };
+
+    let keep_prefix = if selected == 1 { "▶ " } else { "  " };
+    let keep_style = if selected == 1 {
+        Style::default()
+            .fg(theme.highlight)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(theme.label)
+    };
+
+    lines.push(Line::from(vec![Span::styled(
+        format!("{}{}", save_prefix, "Save"),
+        save_style,
+    )]));
+    lines.push(Line::from(vec![Span::styled(
+        format!("{}{}", keep_prefix, "Keep editing"),
+        keep_style,
+    )]));
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, inner);
 }
 
 fn render_form_modal(
@@ -83,7 +142,7 @@ fn render_form_modal(
     in_insert_mode: bool,
     theme: &crate::theme::Theme,
 ) {
-    let width = 64;
+    let width = 84;
     let area_width = width.min(frame.area().width);
     let inner_width = area_width.saturating_sub(4) as usize;
 
@@ -92,11 +151,20 @@ fn render_form_modal(
     let heading = match kind {
         crate::app::FormKind::CreateProject => "✦  CREATE NEW PROJECT  ✦".to_string(),
         crate::app::FormKind::CreateTask => "✦  CREATE NEW TASK  ✦".to_string(),
+        crate::app::FormKind::CreateSubtask { parent_task_name } => {
+            format!("✦  ADD SUBTASK TO: {}  ✦", parent_task_name)
+        }
         crate::app::FormKind::ModifyProject { original_name } => {
             format!("✦  EDIT PROJECT: {}  ✦", original_name)
         }
         crate::app::FormKind::ModifyTask { original_name } => {
             format!("✦  EDIT TASK: {}  ✦", original_name)
+        }
+        crate::app::FormKind::ModifySubtask {
+            parent_task_name: _,
+            original_name,
+        } => {
+            format!("✦  EDIT SUBTASK: {}  ✦", original_name)
         }
     };
     lines.push(Line::from(vec![Span::styled(

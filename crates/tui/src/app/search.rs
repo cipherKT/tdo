@@ -51,13 +51,11 @@ pub(super) fn handle_search(
                     if !state.filtered_projects.is_empty() {
                         let idx = state.filtered_projects[state.selected];
                         let project = &state.projects[idx];
-                        let tasks = engine.list_tasks(&project.name)?;
                         state.context = AppContext::Project {
                             name: project.name.clone(),
                             id: project.id,
                         };
-                        state.filtered_tasks = (0..tasks.len()).collect();
-                        state.tasks = tasks;
+                        crate::app::update_stats(state, engine)?;
                         state.mode = AppMode::Browsing;
                         state.selected = 0;
                     } else if !buffer.is_empty() {
@@ -69,6 +67,8 @@ pub(super) fn handle_search(
                             current_input: String::new(),
                             warning: None,
                             in_insert_mode: false,
+                            show_save_confirm: false,
+                            save_confirm_selected: 0,
                         };
                     }
                 }
@@ -92,6 +92,8 @@ pub(super) fn handle_search(
                             current_input: String::new(),
                             warning: None,
                             in_insert_mode: false,
+                            show_save_confirm: false,
+                            save_confirm_selected: 0,
                         };
                     }
                 }

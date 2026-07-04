@@ -7,7 +7,14 @@ pub(super) fn render_hint_bar(frame: &mut Frame, state: &AppState, area: Rect) {
             let hint = if state.right_pane == RightPane::Calendar {
                 "  h/←/l/→: prev/next day  ·  j/↓/k/↑: prev/next week  ·  Tab: tasks pane  ·  Esc: focus list  ·  q quit"
             } else {
-                "  j/↓/k/↑ move  ·  enter open  ·  / search  ·  d delete  ·  Tab: calendar  ·  q quit"
+                match &state.context {
+                    AppContext::Home => {
+                        "  j/↓/k/↑ move  ·  enter open  ·  / search  ·  d delete  ·  Tab: calendar  ·  q quit"
+                    }
+                    AppContext::Project { .. } => {
+                        "  j/↓/k/↑ move  ·  space toggle  ·  s subtask  ·  d delete  ·  esc back  ·  Tab: calendar  ·  q quit"
+                    }
+                }
             };
             frame.render_widget(
                 Paragraph::new(hint).style(Style::default().fg(state.theme.label)),

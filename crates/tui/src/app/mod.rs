@@ -41,8 +41,19 @@ pub enum AppContext {
 pub enum FormKind {
     CreateProject,
     CreateTask,
-    ModifyProject { original_name: String },
-    ModifyTask { original_name: String },
+    CreateSubtask {
+        parent_task_name: String,
+    },
+    ModifyProject {
+        original_name: String,
+    },
+    ModifyTask {
+        original_name: String,
+    },
+    ModifySubtask {
+        parent_task_name: String,
+        original_name: String,
+    },
 }
 
 pub enum AppMode {
@@ -58,6 +69,8 @@ pub enum AppMode {
         current_input: String,
         warning: Option<String>,
         in_insert_mode: bool,
+        show_save_confirm: bool,
+        save_confirm_selected: usize,
     },
     ConfirmPrompt {
         message: String,
@@ -65,11 +78,20 @@ pub enum AppMode {
     },
 }
 
+#[derive(Clone, Debug)]
+pub enum TaskListItem {
+    Task(engine::Task),
+    Subtask {
+        subtask: engine::Subtask,
+        parent_task_name: String,
+    },
+}
+
 pub struct AppState {
     pub context: AppContext,
     pub mode: AppMode,
     pub projects: Vec<engine::Project>,
-    pub tasks: Vec<engine::Task>,
+    pub tasks: Vec<TaskListItem>,
     pub selected: usize,
     pub filtered_projects: Vec<usize>,
     pub filtered_tasks: Vec<usize>,
@@ -95,7 +117,20 @@ impl AppState {
             engine::Stats::default()
         };
         let tasks = if let Some(proj) = projects.first() {
-            engine.list_tasks(&proj.name)?
+            let db_tasks = engine.list_tasks(&proj.name)?;
+            let mut list = Vec::new();
+            for task in db_tasks {
+                let subtasks = engine.get_subtasks_for_task(task.id)?;
+                let task_name = task.name.clone();
+                list.push(TaskListItem::Task(task));
+                for subtask in subtasks {
+                    list.push(TaskListItem::Subtask {
+                        subtask,
+                        parent_task_name: task_name.clone(),
+                    });
+                }
+            }
+            list
         } else {
             Vec::new()
         };
@@ -169,8 +204,20 @@ pub fn update_stats(state: &mut AppState, engine: &Engine) -> anyhow::Result<()>
             if let Some(&proj_idx) = state.filtered_projects.get(state.selected) {
                 if let Some(project) = state.projects.get(proj_idx) {
                     state.project_stats = engine.project_stats(&project.name)?;
-                    let tasks = engine.list_tasks(&project.name)?;
-                    state.tasks = tasks;
+                    let db_tasks = engine.list_tasks(&project.name)?;
+                    let mut list = Vec::new();
+                    for task in db_tasks {
+                        let subtasks = engine.get_subtasks_for_task(task.id)?;
+                        let task_name = task.name.clone();
+                        list.push(TaskListItem::Task(task));
+                        for subtask in subtasks {
+                            list.push(TaskListItem::Subtask {
+                                subtask,
+                                parent_task_name: task_name.clone(),
+                            });
+                        }
+                    }
+                    state.tasks = list;
                     state.filtered_tasks = (0..state.tasks.len()).collect();
                     let tags = engine.get_tags_for_project(&project.name)?;
                     state.selected_item_tags = tags.into_iter().map(|t| t.name).collect();
@@ -189,10 +236,34 @@ pub fn update_stats(state: &mut AppState, engine: &Engine) -> anyhow::Result<()>
         }
         AppContext::Project { name, .. } => {
             state.project_stats = engine.project_stats(name)?;
+
+            let db_tasks = engine.list_tasks(name)?;
+            let mut list = Vec::new();
+            for task in db_tasks {
+                let subtasks = engine.get_subtasks_for_task(task.id)?;
+                let task_name = task.name.clone();
+                list.push(TaskListItem::Task(task));
+                for subtask in subtasks {
+                    list.push(TaskListItem::Subtask {
+                        subtask,
+                        parent_task_name: task_name.clone(),
+                    });
+                }
+            }
+            state.tasks = list;
+            state.filtered_tasks = (0..state.tasks.len()).collect();
+
             if let Some(&task_idx) = state.filtered_tasks.get(state.selected) {
-                if let Some(task) = state.tasks.get(task_idx) {
-                    let tags = engine.get_tags_for_task(name, &task.name)?;
-                    state.selected_item_tags = tags.into_iter().map(|t| t.name).collect();
+                if let Some(item) = state.tasks.get(task_idx) {
+                    match item {
+                        TaskListItem::Task(task) => {
+                            let tags = engine.get_tags_for_task(name, &task.name)?;
+                            state.selected_item_tags = tags.into_iter().map(|t| t.name).collect();
+                        }
+                        TaskListItem::Subtask { .. } => {
+                            state.selected_item_tags = Vec::new();
+                        }
+                    }
                 } else {
                     state.selected_item_tags = Vec::new();
                 }
@@ -220,6 +291,10 @@ pub fn form_prompt(kind: &FormKind, step: usize) -> &'static str {
             4 => "due date",
             _ => "",
         },
+        FormKind::CreateSubtask { .. } | FormKind::ModifySubtask { .. } => match step {
+            0 => "name",
+            _ => "",
+        },
     }
 }
 
@@ -227,6 +302,7 @@ pub fn form_total_steps(kind: &FormKind) -> usize {
     match kind {
         FormKind::CreateProject | FormKind::ModifyProject { .. } => 3,
         FormKind::CreateTask | FormKind::ModifyTask { .. } => 5,
+        FormKind::CreateSubtask { .. } | FormKind::ModifySubtask { .. } => 1,
     }
 }
 
@@ -250,7 +326,13 @@ pub fn recompute_filter(state: &mut AppState) {
                 .tasks
                 .iter()
                 .enumerate()
-                .filter(|(_, t)| t.name.to_lowercase().contains(&buffer))
+                .filter(|(_, item)| {
+                    let name = match item {
+                        TaskListItem::Task(t) => &t.name,
+                        TaskListItem::Subtask { subtask, .. } => &subtask.name,
+                    };
+                    name.to_lowercase().contains(&buffer)
+                })
                 .map(|(i, _)| i)
                 .collect();
         }
@@ -402,6 +484,7 @@ mod tests {
 
         // Save form by pressing Enter
         handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
 
         // Completed! App mode goes back to browsing
         assert!(matches!(state.mode, AppMode::Browsing));
@@ -470,12 +553,17 @@ mod tests {
 
         // Submit form
         handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
 
         // Completed task creation! Mode back to browsing
         assert!(matches!(state.mode, AppMode::Browsing));
         assert_eq!(state.tasks.len(), 1);
-        assert_eq!(state.tasks[0].name, "task_test");
-        assert_eq!(state.tasks[0].priority, 1);
+        if let TaskListItem::Task(ref task) = state.tasks[0] {
+            assert_eq!(task.name, "task_test");
+            assert_eq!(task.priority, 1);
+        } else {
+            panic!("expected task");
+        }
     }
 
     #[test]
@@ -532,16 +620,20 @@ mod tests {
 
         // Submit form
         handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
 
         // Verify task was created with correct date
         assert!(matches!(state.mode, AppMode::Browsing));
         assert_eq!(state.tasks.len(), 1);
-        let task = &state.tasks[0];
-        let expected_date = (chrono::Local::now().date_naive() + chrono::Days::new(3))
-            .and_hms_opt(0, 0, 0)
-            .unwrap()
-            .and_utc();
-        assert_eq!(task.due_date, Some(expected_date));
+        if let TaskListItem::Task(ref task) = state.tasks[0] {
+            let expected_date = (chrono::Local::now().date_naive() + chrono::Days::new(3))
+                .and_hms_opt(0, 0, 0)
+                .unwrap()
+                .and_utc();
+            assert_eq!(task.due_date, Some(expected_date));
+        } else {
+            panic!("expected task");
+        }
     }
 
     #[test]
@@ -609,6 +701,7 @@ mod tests {
         handle_key(&mut state, make_key(KeyCode::Backspace), &engine).unwrap(); // clear default "3"
         handle_key(&mut state, make_key(KeyCode::Char('2')), &engine).unwrap();
         handle_key(&mut state, make_key(KeyCode::Esc), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
         handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
 
         // Now stats should be updated!
@@ -713,6 +806,7 @@ mod tests {
 
         // Submit form
         handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
 
         // Completed!
         assert!(matches!(state.mode, AppMode::Browsing));
@@ -740,5 +834,67 @@ mod tests {
         engine.toggle_done("proj", "task1").unwrap();
         update_stats(&mut state, &engine).unwrap();
         assert_eq!(state.pending_today.len(), 0);
+    }
+
+    #[test]
+    fn test_app_tui_subtasks() {
+        let engine = Engine::open(":memory:").unwrap();
+        engine.create_project("proj", "desc").unwrap();
+        engine
+            .create_task("proj", "task1", "desc", 1, None)
+            .unwrap();
+
+        let mut state = AppState::new(&engine).unwrap();
+
+        // 1. Enter project "proj"
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        assert_eq!(state.tasks.len(), 1);
+
+        // 2. Open subtask creation form by pressing 's' on task1
+        handle_key(&mut state, make_key(KeyCode::Char('s')), &engine).unwrap();
+        assert!(matches!(
+            state.mode,
+            AppMode::MultiStepForm {
+                kind: FormKind::CreateSubtask { .. },
+                ..
+            }
+        ));
+
+        // 3. Fill in name and submit
+        handle_key(&mut state, make_key(KeyCode::Char('s')), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Char('u')), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Char('b')), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Char('1')), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Esc), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+
+        // 4. Browsing mode, flat task list contains both task and subtask inline
+        assert!(matches!(state.mode, AppMode::Browsing));
+        assert_eq!(state.tasks.len(), 2);
+        assert!(matches!(state.tasks[0], TaskListItem::Task(_)));
+        assert!(matches!(state.tasks[1], TaskListItem::Subtask { .. }));
+
+        // 5. Navigate to subtask (selected index 1)
+        handle_key(&mut state, make_key(KeyCode::Char('j')), &engine).unwrap();
+        assert_eq!(state.selected, 1);
+
+        // Toggle sub1 done
+        handle_key(&mut state, make_key(KeyCode::Char(' ')), &engine).unwrap();
+        if let TaskListItem::Subtask { ref subtask, .. } = state.tasks[1] {
+            assert!(subtask.done);
+        } else {
+            panic!("expected subtask");
+        }
+
+        // Toggle task1 done
+        handle_key(&mut state, make_key(KeyCode::Char('k')), &engine).unwrap(); // move up
+        assert_eq!(state.selected, 0);
+        handle_key(&mut state, make_key(KeyCode::Char(' ')), &engine).unwrap();
+        if let TaskListItem::Task(ref task) = state.tasks[0] {
+            assert!(task.done);
+        } else {
+            panic!("expected task");
+        }
     }
 }

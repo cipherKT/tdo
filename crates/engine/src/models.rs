@@ -26,6 +26,21 @@ pub struct Task {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Subtask {
+    pub id: i64,
+    pub task_id: i64,
+    pub name: String,
+    pub done: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SubtaskPatch {
+    pub name: Option<String>,
+    pub done: Option<bool>,
+}
+
 // structs for modifying tasks and projects
 
 #[derive(Debug, Clone)]

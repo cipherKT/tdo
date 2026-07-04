@@ -5,11 +5,12 @@ A terminal-native project and task manager built for Omarchy/Hyprland. Keyboard-
 ## Features
 
 - **Project and task management** — organize work into projects, each with tasks carrying priority, due dates, and tags
+- **Lightweight checklists (Subtasks)** — add subtasks under tasks with strict completion invariants (parent task cannot be finished while subtasks are pending; adding/marking a subtask undone automatically reopens the parent task)
 - **Fuzzy search** — press `/` to search and navigate, or create new projects/tasks when no match is found
 - **Vim-style keybindings** — `j`/`k` to navigate, `i` to edit, `d` to delete, `space` to toggle done
 - **Smart date parsing** — use natural shortcuts (`today`, `tomorrow`, `mon`), relative offsets (`+3`, `+1w`, `+1m`), or day-of-month (`15`) with instant normalization
 - **Stats pane** — live task counts with proportional bars and a per-project breakdown
-- **Metadata pane** — description, tags, priority, and due date for the selected item
+- **Metadata pane** — description, tags, priority, due date, or parent task status details for the selected item
 - **Waybar integration** — shows your highest priority pending task for today, with a tooltip listing all of today's pending tasks, updating dynamically
 - **Omarchy theme support** — reads `~/.config/omarchy/current/theme/colors.toml` and applies colors live
 
@@ -65,11 +66,12 @@ Reload waybar after saving.
 |-----|--------|
 | `j` / `k` | Move selection down / up |
 | `enter` | Open selected project |
-| `esc` | Go back to home |
+| `esc` | Go back to home / project selection |
 | `/` | Fuzzy search — navigate or create |
-| `i` | Edit selected project or task |
-| `d` | Delete selected (with confirmation) |
-| `space` | Toggle task done/pending |
+| `i` | Edit selected project, task, or subtask |
+| `d` | Delete selected task or subtask (with confirmation) |
+| `space` | Toggle task or subtask done/pending |
+| `s` | Add subtask under selected task |
 | `q` | Quit |
 
 ### Search mode (`/`)
@@ -85,9 +87,16 @@ Reload waybar after saving.
 |-----|--------|
 | `j` / `k` | Move between fields |
 | `i` | Enter insert mode for current field |
-| `esc` (insert) | Confirm field, exit insert mode |
-| `enter` | Save form |
+| `esc` / `enter` (insert) | Confirm field value, exit insert mode |
+| `enter` (normal) | Trigger save confirmation popup |
 | `esc` (normal) | Cancel form |
+
+### Save Confirmation popup
+| Key | Action |
+|-----|--------|
+| `j`/`k` / `Down`/`Up` | Toggle between "Save" and "Keep editing" |
+| `enter` | Confirm chosen option |
+| `esc` | Close confirmation popup (equivalent to "Keep editing") |
 
 ### Smart Date Inputs
 

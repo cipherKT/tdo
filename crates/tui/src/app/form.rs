@@ -12,35 +12,77 @@ pub(super) fn handle_form(
     let mut exit_form = false;
 
     {
-        let (form_kind, step, answers, current_input, warning, in_insert_mode, name) =
-            if let AppMode::MultiStepForm {
-                kind,
+        let (
+            form_kind,
+            step,
+            answers,
+            current_input,
+            warning,
+            in_insert_mode,
+            name,
+            show_save_confirm,
+            save_confirm_selected,
+        ) = if let AppMode::MultiStepForm {
+            kind,
+            step,
+            answers,
+            current_input,
+            warning,
+            in_insert_mode,
+            name,
+            show_save_confirm,
+            save_confirm_selected,
+        } = &mut state.mode
+        {
+            (
+                kind.clone(),
                 step,
                 answers,
                 current_input,
                 warning,
                 in_insert_mode,
-                name,
-            } = &mut state.mode
-            {
-                (
-                    kind.clone(),
-                    step,
-                    answers,
-                    current_input,
-                    warning,
-                    in_insert_mode,
-                    name.clone(),
-                )
-            } else {
-                return Ok(());
-            };
+                name.clone(),
+                show_save_confirm,
+                save_confirm_selected,
+            )
+        } else {
+            return Ok(());
+        };
 
         let total = form_total_steps(&form_kind);
 
-        if *in_insert_mode {
+        if *show_save_confirm {
             match key.code {
                 KeyCode::Esc => {
+                    *show_save_confirm = false;
+                }
+                KeyCode::Char('j') | KeyCode::Down | KeyCode::Char('k') | KeyCode::Up => {
+                    *save_confirm_selected = (*save_confirm_selected + 1) % 2;
+                }
+                KeyCode::Enter => {
+                    if *save_confirm_selected == 0 {
+                        if let Some((err_msg, err_step)) = get_form_error(
+                            &form_kind,
+                            *step,
+                            answers,
+                            current_input,
+                            *in_insert_mode,
+                        ) {
+                            *warning = Some(err_msg);
+                            *step = err_step;
+                            *show_save_confirm = false;
+                            return Ok(());
+                        }
+                        submit_data = Some((form_kind.clone(), answers.clone(), name));
+                    } else {
+                        *show_save_confirm = false;
+                    }
+                }
+                _ => {}
+            }
+        } else if *in_insert_mode {
+            match key.code {
+                KeyCode::Esc | KeyCode::Enter => {
                     let mut val = current_input.clone();
                     if *step == 4 && !val.trim().is_empty() {
                         let today = chrono::Local::now().date_naive();
@@ -89,14 +131,15 @@ pub(super) fn handle_form(
                         return Ok(());
                     }
 
-                    submit_data = Some((form_kind.clone(), answers.clone(), name));
+                    *show_save_confirm = true;
+                    *save_confirm_selected = 0;
                 }
                 _ => {}
             }
         }
 
         // Automatically update the warning state based on all form inputs.
-        if !exit_form {
+        if !exit_form && !*show_save_confirm {
             if let Some((err_msg, _)) =
                 get_form_error(&form_kind, *step, answers, current_input, *in_insert_mode)
             {
@@ -121,11 +164,80 @@ pub(super) fn handle_form(
             FormKind::CreateTask => {
                 submit_create_task(state, engine, &answers, &name)?;
             }
+            FormKind::CreateSubtask { parent_task_name } => {
+                submit_create_subtask(state, engine, &answers, parent_task_name)?;
+            }
             FormKind::ModifyProject { original_name } => {
                 submit_modify_project(state, engine, &answers, original_name)?;
             }
             FormKind::ModifyTask { original_name } => {
                 submit_modify_task(state, engine, &answers, original_name, &name)?;
+            }
+            FormKind::ModifySubtask {
+                parent_task_name,
+                original_name,
+            } => {
+                submit_modify_subtask(state, engine, &answers, parent_task_name, original_name)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn submit_create_subtask(
+    state: &mut AppState,
+    engine: &Engine,
+    answers: &[String],
+    parent_task_name: &str,
+) -> anyhow::Result<()> {
+    let name = answers.get(0).map(|s| s.as_str()).unwrap_or("");
+    if let crate::app::AppContext::Project {
+        name: project_name, ..
+    } = &state.context
+    {
+        match engine.create_subtask(project_name, parent_task_name, name) {
+            Ok(_) => {
+                crate::app::update_stats(state, engine)?;
+                state.mode = AppMode::Browsing;
+                state.selected = 0;
+            }
+            Err(e) => {
+                state.mode = AppMode::Browsing;
+                eprintln!("error creating subtask: {}", e);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn submit_modify_subtask(
+    state: &mut AppState,
+    engine: &Engine,
+    answers: &[String],
+    parent_task_name: &str,
+    original_name: &str,
+) -> anyhow::Result<()> {
+    let new_name = answers.get(0).map(|s| s.as_str()).unwrap_or("");
+    if let crate::app::AppContext::Project {
+        name: project_name, ..
+    } = &state.context
+    {
+        let patch = engine::SubtaskPatch {
+            name: if new_name != original_name {
+                Some(new_name.to_string())
+            } else {
+                None
+            },
+            done: None,
+        };
+        match engine.modify_subtask(project_name, parent_task_name, original_name, patch) {
+            Ok(_) => {
+                crate::app::update_stats(state, engine)?;
+                state.mode = AppMode::Browsing;
+            }
+            Err(e) => {
+                state.mode = AppMode::Browsing;
+                eprintln!("error modifying subtask: {}", e);
             }
         }
     }
@@ -193,8 +305,7 @@ fn submit_create_task(
                     .collect();
                 let _ = engine.add_tags_to_task(project_name, name, &tags);
             }
-            state.tasks = engine.list_tasks(project_name)?;
-            state.filtered_tasks = (0..state.tasks.len()).collect();
+            crate::app::update_stats(state, engine)?;
             state.mode = AppMode::Browsing;
             state.selected = 0;
         }
@@ -300,8 +411,7 @@ fn submit_modify_task(
                     .collect();
                 let _ = engine.add_tags_to_task(project_name, lookup_name, &tags);
             }
-            state.tasks = engine.list_tasks(project_name)?;
-            state.filtered_tasks = (0..state.tasks.len()).collect();
+            crate::app::update_stats(state, engine)?;
             state.mode = AppMode::Browsing;
             state.selected = 0;
         }

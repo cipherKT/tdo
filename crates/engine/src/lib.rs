@@ -2,6 +2,7 @@ mod error;
 mod models;
 mod projects;
 mod stats;
+mod subtasks;
 mod tags;
 mod tasks;
 
@@ -9,7 +10,9 @@ use rusqlite::Connection;
 use std::path::Path;
 
 pub use error::StoreError;
-pub use models::{NextTask, Project, ProjectPatch, Stats, Tag, Task, TaskPatch};
+pub use models::{
+    NextTask, Project, ProjectPatch, Stats, Subtask, SubtaskPatch, Tag, Task, TaskPatch,
+};
 
 pub struct Engine {
     conn: Connection,
@@ -57,8 +60,16 @@ impl Engine {
                 tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
                 PRIMARY KEY (task_id, tag_id)
             );
+            CREATE TABLE IF NOT EXISTS subtasks (
+                id INTEGER PRIMARY KEY,
+                task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                done BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
             CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date) WHERE done=FALSE;
             CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_name_per_project ON tasks(name, project_id);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_subtasks_name_per_task ON subtasks(name, task_id);
             ",
         )
     }
@@ -284,5 +295,65 @@ mod tests {
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].task.name, "today_p2");
         assert_eq!(list[1].task.name, "overdue");
+    }
+
+    #[test]
+    fn test_subtasks() {
+        let engine = Engine::open(":memory:").unwrap();
+        engine.create_project("proj", "desc").unwrap();
+        engine
+            .create_task("proj", "task1", "task desc", 1, None)
+            .unwrap();
+
+        // 1. Create subtask
+        let st1 = engine.create_subtask("proj", "task1", "sub1").unwrap();
+        assert_eq!(st1.name, "sub1");
+        assert!(!st1.done);
+
+        // Duplicate subtask name should fail
+        let err = engine.create_subtask("proj", "task1", "sub1").unwrap_err();
+        assert!(matches!(err, StoreError::SubtaskNameTaken(_)));
+
+        // 2. List subtasks
+        let list = engine.list_subtasks("proj", "task1").unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "sub1");
+
+        // 3. Strict completion check: cannot mark task1 done since sub1 is undone
+        let err = engine.toggle_done("proj", "task1").unwrap_err();
+        assert!(matches!(err, StoreError::PendingSubtasks(_)));
+
+        // 4. Toggle subtask done
+        let st1 = engine.toggle_subtask_done("proj", "task1", "sub1").unwrap();
+        assert!(st1.done);
+
+        // 5. Now we can mark task1 done
+        let t1 = engine.toggle_done("proj", "task1").unwrap();
+        assert!(t1.done);
+
+        // 6. Creating a new subtask (starts undone) should reopen the task
+        let st2 = engine.create_subtask("proj", "task1", "sub2").unwrap();
+        assert_eq!(st2.name, "sub2");
+        assert!(!st2.done);
+
+        let t1 = engine.get_task_by_name("proj", "task1").unwrap();
+        assert!(!t1.done); // Auto-reopened!
+
+        // Complete sub2
+        engine.toggle_subtask_done("proj", "task1", "sub2").unwrap();
+        // Mark task1 done again
+        engine.toggle_done("proj", "task1").unwrap();
+
+        // 7. Toggling subtask undone should reopen task1
+        engine.toggle_subtask_done("proj", "task1", "sub1").unwrap(); // sub1 is now undone
+        let t1 = engine.get_task_by_name("proj", "task1").unwrap();
+        assert!(!t1.done); // Auto-reopened!
+
+        // 8. Delete subtask
+        let deleted = engine.delete_subtask("proj", "task1", "sub1").unwrap();
+        assert!(deleted);
+        let list = engine.list_subtasks("proj", "task1").unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "sub2");
     }
 }
