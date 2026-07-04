@@ -232,4 +232,57 @@ mod tests {
         assert_eq!(pending_today[1].task.name, "task2");
         assert_eq!(pending_today[1].project_name, "proj2");
     }
+
+    #[test]
+    fn test_list_today_tasks() {
+        let engine = Engine::open(":memory:").unwrap();
+        engine.create_project("proj", "desc").unwrap();
+
+        // 1. Initially, no tasks -> list_today_tasks() is empty
+        assert!(engine.list_today_tasks().unwrap().is_empty());
+
+        let today = chrono::Utc::now();
+        let yesterday = today - chrono::Days::new(1);
+        let tomorrow = today + chrono::Days::new(1);
+
+        // 2. Future task -> list_today_tasks() is still empty because it's not due yet
+        engine
+            .create_task("proj", "future", "d", 1, Some(tomorrow))
+            .unwrap();
+        assert!(engine.list_today_tasks().unwrap().is_empty());
+
+        // 3. Overdue task (priority 3) -> should be returned
+        engine
+            .create_task("proj", "overdue", "d", 3, Some(yesterday))
+            .unwrap();
+        let list = engine.list_today_tasks().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].task.name, "overdue");
+
+        // 4. Today task (priority 2) -> priority 2 is higher than 3 (priority ASC order)
+        engine
+            .create_task("proj", "today_p2", "d", 2, Some(today))
+            .unwrap();
+        let list = engine.list_today_tasks().unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].task.name, "today_p2");
+        assert_eq!(list[1].task.name, "overdue");
+
+        // 5. Overdue task (priority 1) -> priority 1 is even higher, should be returned first
+        engine
+            .create_task("proj", "overdue_p1", "d", 1, Some(yesterday))
+            .unwrap();
+        let list = engine.list_today_tasks().unwrap();
+        assert_eq!(list.len(), 3);
+        assert_eq!(list[0].task.name, "overdue_p1");
+        assert_eq!(list[1].task.name, "today_p2");
+        assert_eq!(list[2].task.name, "overdue");
+
+        // 6. Complete the highest priority task -> next should be "today_p2"
+        engine.toggle_done("proj", "overdue_p1").unwrap();
+        let list = engine.list_today_tasks().unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].task.name, "today_p2");
+        assert_eq!(list[1].task.name, "overdue");
+    }
 }

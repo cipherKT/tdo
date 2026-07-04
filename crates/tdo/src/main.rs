@@ -5,8 +5,8 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(name = "tdo", about = "A terminal todo manager")]
 struct Args {
-    #[arg(long, help = "Print the next pending task as JSON (for waybar)")]
-    next_task: bool,
+    #[arg(long, help = "Print today's pending tasks as JSON (for waybar)")]
+    today: bool,
 }
 
 fn db_path() -> PathBuf {
@@ -25,18 +25,21 @@ fn main() {
 
     let engine = Engine::open(&path).expect("Failed to open database");
 
-    if args.next_task {
-        match engine.next_task() {
-            Ok(Some(nt)) => {
-                let json = serde_json::json!({
-                    "name": nt.task.name,
-                    "due": nt.task.due_date,
-                    "project": nt.project_name
-                });
+    if args.today {
+        match engine.list_today_tasks() {
+            Ok(tasks) => {
+                let json = serde_json::json!(tasks
+                    .iter()
+                    .map(|nt| {
+                        serde_json::json!({
+                            "name": nt.task.name,
+                            "due": nt.task.due_date,
+                            "project": nt.project_name,
+                            "priority": nt.task.priority
+                        })
+                    })
+                    .collect::<Vec<_>>());
                 println!("{}", json);
-            }
-            Ok(None) => {
-                // no pending task, waybar thinks all clear
             }
             Err(e) => {
                 eprintln!("Error: {:?}", e);

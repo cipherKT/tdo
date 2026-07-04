@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # waybar custom/tasks module script
-# Calls tdo --next-task to get the earliest pending task,
+# Calls tdo --today to get today's pending tasks,
 # formats a relative due date, and emits waybar JSON (text + tooltip).
 
 set -euo pipefail
@@ -14,24 +14,37 @@ if ! command -v jq &>/dev/null; then
 fi
 
 # --- fetch -------------------------------------------------------------
-raw="$("$TODO_BIN" --next-task 2>/dev/null || echo 'null')"
+raw="$("$TODO_BIN" --today 2>/dev/null || echo '[]')"
 
-if [[ -z "$raw" || "$raw" == "null" ]]; then
+if [[ -z "$raw" || "$raw" == "[]" || "$raw" == "null" ]]; then
   printf '{"text": "all clear \u2728", "tooltip": "No pending tasks. Nice."}\n'
   exit 0
 fi
 
-# --- parse -------------------------------------------------------------
-name=$(echo "$raw" | jq -r '.name // empty')
-due=$(echo "$raw" | jq -r '.due  // empty')
-project=$(echo "$raw" | jq -r '.project // empty')
+# --- parse first task for bar text -------------------------------------
+first_task=$(echo "$raw" | jq -r '.[0] // empty')
+if [[ -z "$first_task" || "$first_task" == "null" ]]; then
+  printf '{"text": "all clear \u2728", "tooltip": "No pending tasks. Nice."}\n'
+  exit 0
+fi
+
+name=$(echo "$first_task" | jq -r '.name // empty')
+due=$(echo "$first_task" | jq -r '.due  // empty')
+project=$(echo "$first_task" | jq -r '.project // empty')
+priority=$(echo "$first_task" | jq -r '.priority // empty')
 
 if [[ -z "$name" || -z "$due" ]]; then
   printf '{"text": "all clear \u2728", "tooltip": "No pending tasks. Nice."}\n'
   exit 0
 fi
 
-# --- relative date math ------------------------------------------------
+# Format text with priority prefix if available
+prefix=""
+if [[ -n "$priority" ]]; then
+  prefix="[P${priority}] "
+fi
+
+# --- relative date math for first task ---------------------------------
 today_date=$(date -d "today" +%Y-%m-%d)
 today_epoch=$(date -d "$today_date" +%s)
 
@@ -47,23 +60,50 @@ fi
 
 if ((diff_days < 0)); then
   rel="overdue $((-diff_days))d"
-elif ((diff_days == 0)); then
-  rel="due today"
-elif ((diff_days == 1)); then
-  rel="due in 1d"
 else
-  rel="due in ${diff_days}d"
+  rel="due today"
 fi
 
-text="${name}: ${rel}"
+text="${prefix}${name}: ${rel}"
 
-# --- tooltip -----------------------------------------------------------
-tooltip="$name"
-[[ -n "$project" ]] && tooltip="$tooltip  ($project)"
-tooltip="$tooltip\n$rel"
+# --- tooltip construction ---------------------------------------------
+tooltip=""
+num_tasks=$(echo "$raw" | jq '. | length')
+for ((i=0; i<num_tasks; i++)); do
+  t_raw=$(echo "$raw" | jq -r ".[$i]")
+  t_name=$(echo "$t_raw" | jq -r '.name')
+  t_due=$(echo "$t_raw" | jq -r '.due')
+  t_project=$(echo "$t_raw" | jq -r '.project // empty')
+  t_priority=$(echo "$t_raw" | jq -r '.priority // empty')
 
-# --- escape for JSON ---------------------------------------------------
-text_esc=$(echo "$text" | sed 's/"/\\"/g')
-tooltip_esc=$(echo -e "$tooltip" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
+  t_due_date=$(date -d "$t_due" +%Y-%m-%d 2>/dev/null || echo "$today_date")
+  t_due_epoch=$(date -d "$t_due_date" +%s)
+  t_diff_seconds=$((t_due_epoch - today_epoch))
+  if ((t_diff_seconds >= 0)); then
+    t_diff_days=$(((t_diff_seconds + 43200) / 86400))
+  else
+    t_diff_days=$(((t_diff_seconds - 43200) / 86400))
+  fi
 
-printf '{"text": "%s", "tooltip": "%s"}\n' "$text_esc" "$tooltip_esc"
+  if ((t_diff_days < 0)); then
+    t_rel="overdue $((-t_diff_days))d"
+  else
+    t_rel="due today"
+  fi
+
+  line=""
+  [[ -n "$t_priority" ]] && line="[P${t_priority}] "
+  line="${line}${t_name}"
+  [[ -n "$t_project" ]] && line="${line}  (${t_project})"
+  line="${line} - ${t_rel}"
+
+  if [[ -z "$tooltip" ]]; then
+    tooltip="$line"
+  else
+    tooltip="${tooltip}
+${line}"
+  fi
+done
+
+# --- output JSON safely via jq -----------------------------------------
+jq -c -n --arg text "$text" --arg tooltip "$tooltip" '{"text": $text, "tooltip": $tooltip}'

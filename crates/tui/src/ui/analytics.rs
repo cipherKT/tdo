@@ -202,7 +202,10 @@ pub(super) fn render_pending_today(frame: &mut Frame, state: &AppState, area: Re
     };
 
     let block = Block::default()
-        .title(Line::from(vec![Span::styled(" pending today ", title_style)]))
+        .title(Line::from(vec![Span::styled(
+            " pending today ",
+            title_style,
+        )]))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
 

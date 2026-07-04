@@ -198,19 +198,33 @@ impl Engine {
             .map(|t| t.expect("task must exist since we fetched it"))
     }
 
-    pub fn next_task(&self) -> Result<Option<NextTask>, StoreError> {
-        let result = self.conn.query_row(
-            "SELECT t.id, t.project_id, t.name, t.description, t.priority, t.due_date,t.done, t.created_at, p.name as project_name FROM tasks t JOIN projects p ON t.project_id = p.id WHERE t.done = FALSE AND t.due_date IS NOT NULL ORDER BY t.due_date ASC LIMIT 1",
-            [],
-            |row| {
-                Ok(NextTask { task: Task { id: row.get(0)?, project_id: row.get(1)?, name: row.get(2)?, description: row.get(3)?, priority: row.get(4)?, due_date: row.get(5)?, done: row.get(6)?, created_at: row.get(7)? }, project_name: row.get(8)? })
-            },
-        );
-        match result {
-            Ok(t) => Ok(Some(t)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(StoreError::Db(e)),
-        }
+    pub fn list_today_tasks(&self) -> Result<Vec<NextTask>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT t.id, t.project_id, t.name, t.description, t.priority, t.due_date, t.done, t.created_at, p.name as project_name
+             FROM tasks t
+             JOIN projects p ON t.project_id = p.id
+             WHERE t.done = FALSE
+               AND t.due_date IS NOT NULL
+               AND DATE(t.due_date) <= DATE('now', 'localtime')
+             ORDER BY t.priority ASC, t.due_date ASC, t.name ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(NextTask {
+                task: Task {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    name: row.get(2)?,
+                    description: row.get(3)?,
+                    priority: row.get(4)?,
+                    due_date: row.get(5)?,
+                    done: row.get(6)?,
+                    created_at: row.get(7)?,
+                },
+                project_name: row.get(8)?,
+            })
+        })?;
+        let tasks = rows.collect::<Result<Vec<_>, _>>()?;
+        Ok(tasks)
     }
 
     pub fn task_names(&self, project_name: &str) -> Result<Vec<String>, StoreError> {
@@ -259,12 +273,7 @@ impl Engine {
     }
 
     /// Returns the count of pending tasks due on a specific date.
-    pub fn count_tasks_due_on(
-        &self,
-        year: i32,
-        month: u32,
-        day: u32,
-    ) -> Result<i64, StoreError> {
+    pub fn count_tasks_due_on(&self, year: i32, month: u32, day: u32) -> Result<i64, StoreError> {
         let date_str = format!("{:04}-{:02}-{:02}", year, month, day);
         let count: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM tasks t

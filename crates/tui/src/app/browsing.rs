@@ -1,4 +1,6 @@
-use crate::app::{AppContext, AppMode, AppState, CalendarState, FormKind, RightPane, recompute_filter};
+use crate::app::{
+    AppContext, AppMode, AppState, CalendarState, FormKind, RightPane, recompute_filter,
+};
 use engine::Engine;
 
 pub(super) fn handle_browsing(
@@ -295,11 +297,12 @@ fn day_for_cursor(year: i32, month: u32, row: u32, col: u32) -> Option<u32> {
 }
 
 /// Fetch tasks for the day the cursor is on and store them in `state.calendar.day_tasks`.
-pub(crate) fn refresh_calendar_day(
-    state: &mut AppState,
-    engine: &Engine,
-) -> anyhow::Result<()> {
-    let (year, month, day) = (state.calendar.year, state.calendar.month, state.calendar.cursor_day);
+pub(crate) fn refresh_calendar_day(state: &mut AppState, engine: &Engine) -> anyhow::Result<()> {
+    let (year, month, day) = (
+        state.calendar.year,
+        state.calendar.month,
+        state.calendar.cursor_day,
+    );
     if day == 0 {
         state.calendar.day_tasks = Some(Vec::new());
         return Ok(());

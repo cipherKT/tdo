@@ -135,9 +135,8 @@ fn render_grid(frame: &mut Frame, state: &AppState, area: Rect) {
             // Fetch task count for this cell (stored in calendar state if
             // available, otherwise display a plain number).
             // We build style based on what kind of day this is.
-            let is_today = cal.year == today.year()
-                && cal.month == today.month()
-                && day == today.day();
+            let is_today =
+                cal.year == today.year() && cal.month == today.month() && day == today.day();
             let is_cursor = is_focused && row == cal.cursor_row && col == cal.cursor_col;
             let is_weekend = col >= 5;
 
@@ -195,7 +194,9 @@ fn render_day_tasks(frame: &mut Frame, state: &AppState, area: Rect) {
             .fg(state.theme.primary_accent)
             .add_modifier(Modifier::DIM)
     } else {
-        Style::default().fg(state.theme.label).add_modifier(Modifier::DIM)
+        Style::default()
+            .fg(state.theme.label)
+            .add_modifier(Modifier::DIM)
     };
     lines.push(Line::from(vec![Span::styled(day_label, sep_style)]));
 
@@ -210,7 +211,11 @@ fn render_day_tasks(frame: &mut Frame, state: &AppState, area: Rect) {
             )]));
         }
         Some(tasks) if tasks.is_empty() => {
-            let msg = if cal.cursor_day == 0 { "—" } else { "No pending tasks." };
+            let msg = if cal.cursor_day == 0 {
+                "—"
+            } else {
+                "No pending tasks."
+            };
             lines.push(Line::from(vec![Span::styled(
                 msg,
                 Style::default()
@@ -252,7 +257,11 @@ fn render_day_tasks(frame: &mut Frame, state: &AppState, area: Rect) {
 
 fn days_in_month(year: i32, month: u32) -> u32 {
     use chrono::NaiveDate;
-    let (ny, nm) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
+    let (ny, nm) = if month == 12 {
+        (year + 1, 1)
+    } else {
+        (year, month + 1)
+    };
     NaiveDate::from_ymd_opt(ny, nm, 1)
         .unwrap()
         .pred_opt()

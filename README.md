@@ -1,6 +1,6 @@
 # tdo
 
-A terminal-native project and task manager built for Omarchy/Hyprland. Keyboard-driven, SQLite-backed, with a Waybar integration that surfaces your most urgent pending task.
+A terminal-native project and task manager built for Omarchy/Hyprland. Keyboard-driven, SQLite-backed, with a Waybar integration that surfaces your pending tasks for today.
 
 ## Features
 
@@ -10,7 +10,7 @@ A terminal-native project and task manager built for Omarchy/Hyprland. Keyboard-
 - **Smart date parsing** — use natural shortcuts (`today`, `tomorrow`, `mon`), relative offsets (`+3`, `+1w`, `+1m`), or day-of-month (`15`) with instant normalization
 - **Stats pane** — live task counts with proportional bars and a per-project breakdown
 - **Metadata pane** — description, tags, priority, and due date for the selected item
-- **Waybar integration** — shows your earliest pending task with a relative due date, updates every 30 seconds
+- **Waybar integration** — shows your highest priority pending task for today, with a tooltip listing all of today's pending tasks, updating dynamically
 - **Omarchy theme support** — reads `~/.config/omarchy/current/theme/colors.toml` and applies colors live
 
 ## Requirements
@@ -50,7 +50,7 @@ Add to your waybar config:
 "custom/tasks": {
     "exec": "~/.config/waybar/scripts/task-list.sh",
     "return-type": "json",
-    "interval": 30,
+    "interval": 5,
     "format": "󰄨  {}",
     "tooltip": true
 }
