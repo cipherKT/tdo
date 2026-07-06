@@ -220,7 +220,8 @@ pub(super) fn render_pending_today(frame: &mut Frame, state: &AppState, area: Re
         let empty_msg = Paragraph::new(Line::from(vec![Span::styled(
             "No pending tasks for today.",
             Style::default().fg(state.theme.label),
-        )]));
+        )]))
+        .wrap(Wrap { trim: true });
         frame.render_widget(empty_msg, inner);
         return;
     }
@@ -252,6 +253,6 @@ pub(super) fn render_pending_today(frame: &mut Frame, state: &AppState, area: Re
         lines.push(line);
     }
 
-    let paragraph = Paragraph::new(lines);
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: true });
     frame.render_widget(paragraph, inner);
 }
