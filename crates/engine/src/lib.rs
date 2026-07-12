@@ -11,7 +11,7 @@ use std::path::Path;
 
 pub use error::StoreError;
 pub use models::{
-    NextTask, Project, ProjectPatch, Stats, Subtask, SubtaskPatch, Tag, Task, TaskPatch,
+    NextTask, Project, ProjectPatch, Recurrence, Stats, Subtask, SubtaskPatch, Tag, Task, TaskPatch,
 };
 
 pub struct Engine {
@@ -52,6 +52,7 @@ impl Engine {
                 description TEXT NOT NULL DEFAULT '',
                 priority INTEGER NOT NULL,
                 due_date TIMESTAMP,
+                recurrence TEXT,
                 done BOOLEAN NOT NULL DEFAULT FALSE,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
@@ -69,11 +70,23 @@ impl Engine {
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date) WHERE done=FALSE;
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_name_per_project ON tasks(name, project_id);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_name_per_project ON tasks(name, project_id) WHERE done = FALSE;
             CREATE UNIQUE INDEX IF NOT EXISTS idx_subtasks_name_per_task ON subtasks(name, task_id);
             ",
         )?;
-        let _ = self.conn.execute("ALTER TABLE subtasks ADD COLUMN due_date TIMESTAMP", []);
+        let _ = self
+            .conn
+            .execute("ALTER TABLE subtasks ADD COLUMN due_date TIMESTAMP", []);
+        let _ = self
+            .conn
+            .execute("ALTER TABLE tasks ADD COLUMN recurrence TEXT", []);
+        let _ = self
+            .conn
+            .execute("DROP INDEX idx_tasks_name_per_project", []);
+        self.conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_name_per_project ON tasks(name, project_id) WHERE done = FALSE",
+            [],
+        )?;
         Ok(())
     }
 }
@@ -126,7 +139,7 @@ mod tests {
 
         // Create task
         let t = engine
-            .create_task("proj", "task1", "task desc", 1, None)
+            .create_task("proj", "task1", "task desc", 1, None, None)
             .unwrap();
         assert_eq!(t.name, "task1");
         assert_eq!(t.priority, 1);
@@ -134,7 +147,7 @@ mod tests {
 
         // Duplicate task name in same project should fail
         let err = engine
-            .create_task("proj", "task1", "other", 2, None)
+            .create_task("proj", "task1", "other", 2, None, None)
             .unwrap_err();
         assert!(matches!(err, StoreError::TaskNameTaken(_)));
 
@@ -153,6 +166,7 @@ mod tests {
             description: Some("new desc".to_string()),
             priority: Some(2),
             due_date: None,
+            recurrence: None,
             done: Some(false),
         };
         let modified = engine.modify_task("proj", "task1", patch).unwrap().unwrap();
@@ -172,7 +186,7 @@ mod tests {
         let engine = Engine::open(":memory:").unwrap();
         engine.create_project("proj", "desc").unwrap();
         engine
-            .create_task("proj", "task1", "desc", 3, None)
+            .create_task("proj", "task1", "desc", 3, None, None)
             .unwrap();
 
         // Add tags to project
@@ -202,8 +216,12 @@ mod tests {
     fn test_stats() {
         let engine = Engine::open(":memory:").unwrap();
         engine.create_project("proj", "desc").unwrap();
-        engine.create_task("proj", "t1", "d", 1, None).unwrap();
-        engine.create_task("proj", "t2", "d", 2, None).unwrap();
+        engine
+            .create_task("proj", "t1", "d", 1, None, None)
+            .unwrap();
+        engine
+            .create_task("proj", "t2", "d", 2, None, None)
+            .unwrap();
 
         let stats = engine.project_stats("proj").unwrap();
         assert_eq!(stats.total, 2);
@@ -228,15 +246,15 @@ mod tests {
 
         let today = chrono::Utc::now();
         engine
-            .create_task("proj1", "task1", "d", 1, Some(today))
+            .create_task("proj1", "task1", "d", 1, Some(today), None)
             .unwrap();
         engine
-            .create_task("proj2", "task2", "d", 2, Some(today))
+            .create_task("proj2", "task2", "d", 2, Some(today), None)
             .unwrap();
 
         let tomorrow = today + chrono::Days::new(1);
         engine
-            .create_task("proj1", "task3", "d", 3, Some(tomorrow))
+            .create_task("proj1", "task3", "d", 3, Some(tomorrow), None)
             .unwrap();
 
         let pending_today = engine.list_pending_today_tasks().unwrap();
@@ -261,13 +279,13 @@ mod tests {
 
         // 2. Future task -> list_today_tasks() is still empty because it's not due yet
         engine
-            .create_task("proj", "future", "d", 1, Some(tomorrow))
+            .create_task("proj", "future", "d", 1, Some(tomorrow), None)
             .unwrap();
         assert!(engine.list_today_tasks().unwrap().is_empty());
 
         // 3. Overdue task (priority 3) -> should be returned
         engine
-            .create_task("proj", "overdue", "d", 3, Some(yesterday))
+            .create_task("proj", "overdue", "d", 3, Some(yesterday), None)
             .unwrap();
         let list = engine.list_today_tasks().unwrap();
         assert_eq!(list.len(), 1);
@@ -275,7 +293,7 @@ mod tests {
 
         // 4. Today task (priority 2) -> priority 2 is higher than 3 (priority ASC order)
         engine
-            .create_task("proj", "today_p2", "d", 2, Some(today))
+            .create_task("proj", "today_p2", "d", 2, Some(today), None)
             .unwrap();
         let list = engine.list_today_tasks().unwrap();
         assert_eq!(list.len(), 2);
@@ -284,7 +302,7 @@ mod tests {
 
         // 5. Overdue task (priority 1) -> priority 1 is even higher, should be returned first
         engine
-            .create_task("proj", "overdue_p1", "d", 1, Some(yesterday))
+            .create_task("proj", "overdue_p1", "d", 1, Some(yesterday), None)
             .unwrap();
         let list = engine.list_today_tasks().unwrap();
         assert_eq!(list.len(), 3);
@@ -305,16 +323,20 @@ mod tests {
         let engine = Engine::open(":memory:").unwrap();
         engine.create_project("proj", "desc").unwrap();
         engine
-            .create_task("proj", "task1", "task desc", 1, None)
+            .create_task("proj", "task1", "task desc", 1, None, None)
             .unwrap();
 
         // 1. Create subtask
-        let st1 = engine.create_subtask("proj", "task1", "sub1", None).unwrap();
+        let st1 = engine
+            .create_subtask("proj", "task1", "sub1", None)
+            .unwrap();
         assert_eq!(st1.name, "sub1");
         assert!(!st1.done);
 
         // Duplicate subtask name should fail
-        let err = engine.create_subtask("proj", "task1", "sub1", None).unwrap_err();
+        let err = engine
+            .create_subtask("proj", "task1", "sub1", None)
+            .unwrap_err();
         assert!(matches!(err, StoreError::SubtaskNameTaken(_)));
 
         // 2. List subtasks
@@ -335,7 +357,9 @@ mod tests {
         assert!(t1.done);
 
         // 6. Creating a new subtask (starts undone) should reopen the task
-        let st2 = engine.create_subtask("proj", "task1", "sub2", None).unwrap();
+        let st2 = engine
+            .create_subtask("proj", "task1", "sub2", None)
+            .unwrap();
         assert_eq!(st2.name, "sub2");
         assert!(!st2.done);
 
@@ -363,23 +387,40 @@ mod tests {
     fn test_subtask_due_dates() {
         let engine = Engine::open(":memory:").unwrap();
         engine.create_project("proj", "desc").unwrap();
-        
+
         let today = chrono::Utc::now();
         let tomorrow = today + chrono::Days::new(1);
         let yesterday = today - chrono::Days::new(1);
 
-        engine.create_task("proj", "task1", "desc", 1, Some(today)).unwrap();
+        engine
+            .create_task("proj", "task1", "desc", 1, Some(today), None)
+            .unwrap();
 
         // 1. Create subtask with valid due date (yesterday < today)
-        let st1 = engine.create_subtask("proj", "task1", "sub1", Some(yesterday)).unwrap();
+        let st1 = engine
+            .create_subtask("proj", "task1", "sub1", Some(yesterday))
+            .unwrap();
         assert_eq!(st1.due_date, Some(yesterday));
 
         // 2. Create subtask with invalid due date (tomorrow > today)
-        let err = engine.create_subtask("proj", "task1", "sub2", Some(tomorrow)).unwrap_err();
+        let err = engine
+            .create_subtask("proj", "task1", "sub2", Some(tomorrow))
+            .unwrap_err();
         assert!(matches!(err, StoreError::InvalidDueDate(_)));
-        
+
         // 3. Modify subtask with invalid due date
-        let err = engine.modify_subtask("proj", "task1", "sub1", SubtaskPatch { name: None, done: None, due_date: Some(Some(tomorrow)) }).unwrap_err();
+        let err = engine
+            .modify_subtask(
+                "proj",
+                "task1",
+                "sub1",
+                SubtaskPatch {
+                    name: None,
+                    done: None,
+                    due_date: Some(Some(tomorrow)),
+                },
+            )
+            .unwrap_err();
         assert!(matches!(err, StoreError::InvalidDueDate(_)));
 
         // 4. Verify subtasks appear in list_today_tasks
@@ -389,5 +430,68 @@ mod tests {
         let has_subtask = list.iter().any(|t| t.task.name == "task1 ↪ sub1");
         assert!(has_task);
         assert!(has_subtask);
+    }
+
+    #[test]
+    fn test_task_recurrence() {
+        let engine = Engine::open(":memory:").unwrap();
+        engine.create_project("proj", "desc").unwrap();
+
+        let today = chrono::Utc::now();
+        // Create a repetitive task (daily)
+        let t = engine
+            .create_task(
+                "proj",
+                "daily_task",
+                "desc",
+                1,
+                Some(today),
+                Some("daily".to_string()),
+            )
+            .unwrap();
+        assert_eq!(t.recurrence, Some("daily".to_string()));
+        assert_eq!(t.due_date, Some(today));
+
+        // Add subtask
+        engine
+            .create_subtask("proj", "daily_task", "sub1", Some(today))
+            .unwrap();
+
+        // Add tag
+        engine
+            .add_tags_to_task("proj", "daily_task", &["tag1"])
+            .unwrap();
+
+        // Complete subtask first
+        engine
+            .toggle_subtask_done("proj", "daily_task", "sub1")
+            .unwrap();
+
+        // Complete the task
+        let updated = engine.toggle_done("proj", "daily_task").unwrap();
+        assert!(updated.done);
+
+        // A new copy should be created with tomorrow's due date
+        let tasks = engine.list_tasks("proj").unwrap();
+        // There should be 2 tasks now: one completed (daily_task) and one pending (daily_task)
+        assert_eq!(tasks.len(), 2);
+
+        let pending_task = tasks.iter().find(|tk| !tk.done).unwrap();
+        assert_eq!(pending_task.name, "daily_task");
+        assert_eq!(pending_task.recurrence, Some("daily".to_string()));
+        let tomorrow = today + chrono::Days::new(1);
+        assert_eq!(pending_task.due_date, Some(tomorrow));
+
+        // Subtask should be cloned and set to undone under the new task
+        let subtasks = engine.get_subtasks_for_task(pending_task.id).unwrap();
+        assert_eq!(subtasks.len(), 1);
+        assert_eq!(subtasks[0].name, "sub1");
+        assert!(!subtasks[0].done);
+        assert_eq!(subtasks[0].due_date, Some(tomorrow));
+
+        // Tag should be cloned
+        let tags = engine.get_tags_for_task_by_id(pending_task.id).unwrap();
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].name, "tag1");
     }
 }

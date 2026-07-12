@@ -1,4 +1,4 @@
-use crate::app::{AppContext, AppMode, AppState, RightPane};
+use crate::app::{AppContext, AppMode, AppState, FormKind, RightPane};
 use ratatui::{Frame, layout::Rect, style::Style, widgets::Paragraph};
 
 pub(super) fn render_hint_bar(frame: &mut Frame, state: &AppState, area: Rect) {
@@ -43,8 +43,27 @@ pub(super) fn render_hint_bar(frame: &mut Frame, state: &AppState, area: Rect) {
                 area,
             );
         }
-        AppMode::MultiStepForm { in_insert_mode, .. } => {
-            let content = if *in_insert_mode {
+        AppMode::MultiStepForm {
+            in_insert_mode,
+            kind,
+            step,
+            ..
+        } => {
+            let is_due_date_step = match kind {
+                FormKind::CreateTask | FormKind::ModifyTask { .. } => *step == 4,
+                FormKind::CreateSubtask { .. } | FormKind::ModifySubtask { .. } => *step == 1,
+                _ => false,
+            };
+            let is_recurrence_step = match kind {
+                FormKind::CreateTask | FormKind::ModifyTask { .. } => *step == 5,
+                _ => false,
+            };
+
+            let content = if is_recurrence_step {
+                "  [RECURRENCE]  daily (d), weekly (w), biweekly, triweekly, monthly (m), bimonthly, yearly (y)"
+            } else if is_due_date_step {
+                "  [DUE DATE]  e.g. today, tomorrow, +3 (days), +1w (weeks), mon, 07-04, 15"
+            } else if *in_insert_mode {
                 "  [INSERT]  Press ESC to finish editing this field"
             } else {
                 "  [NORMAL]  j/↓/k/↑: navigate  ·  i: edit field  ·  enter: save  ·  esc: cancel"

@@ -143,9 +143,17 @@ pub(super) fn render_tasks_list(frame: &mut Frame, state: &AppState, area: Rect)
                 };
 
                 let check = if task.done { "[x] " } else { "[ ] " };
+                let rec_label = if let Some(ref rec) = task.recurrence {
+                    format!(" 🔄 ({})", rec)
+                } else {
+                    "".to_string()
+                };
 
                 Line::from(vec![
-                    Span::styled(format!("{}{}{}", prefix, check, task.name), done_style),
+                    Span::styled(
+                        format!("{}{}{}{}", prefix, check, task.name, rec_label),
+                        done_style,
+                    ),
                     Span::raw("  "),
                     priority_label,
                     Span::raw("  "),

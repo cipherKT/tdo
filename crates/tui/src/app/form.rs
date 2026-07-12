@@ -86,7 +86,9 @@ pub(super) fn handle_form(
                     let mut val = current_input.clone();
                     let is_due_date = match &form_kind {
                         FormKind::CreateTask | FormKind::ModifyTask { .. } => *step == 4,
-                        FormKind::CreateSubtask { .. } | FormKind::ModifySubtask { .. } => *step == 1,
+                        FormKind::CreateSubtask { .. } | FormKind::ModifySubtask { .. } => {
+                            *step == 1
+                        }
                         _ => false,
                     };
                     if is_due_date && !val.trim().is_empty() {
@@ -324,7 +326,16 @@ fn submit_create_task(
         }
     });
 
-    match engine.create_task(project_name, name, description, priority, due_date) {
+    let recurrence = answers.get(5).cloned().filter(|s| !s.trim().is_empty());
+
+    match engine.create_task(
+        project_name,
+        name,
+        description,
+        priority,
+        due_date,
+        recurrence,
+    ) {
         Ok(_) => {
             if !tags_raw.is_empty() {
                 let tags: Vec<&str> = tags_raw
@@ -413,6 +424,8 @@ fn submit_modify_task(
         }
     });
 
+    let recurrence = answers.get(5).cloned().filter(|s| !s.trim().is_empty());
+
     let patch = engine::TaskPatch {
         name: if new_name != original_name {
             Some(new_name.to_string())
@@ -422,6 +435,7 @@ fn submit_modify_task(
         description: Some(description.to_string()),
         priority: Some(priority),
         due_date: Some(due_date),
+        recurrence: Some(recurrence),
         done: None,
     };
 
@@ -497,6 +511,17 @@ fn validate_due_date(due_val: &str) -> Result<(), String> {
     super::date_parser::parse_due_date(due_val, today).map(|_| ())
 }
 
+fn validate_recurrence(rec_val: &str) -> Result<(), String> {
+    if rec_val.is_empty() {
+        return Ok(());
+    }
+    if engine::Recurrence::parse(rec_val).is_some() {
+        Ok(())
+    } else {
+        Err("Recurrence must be daily/d, weekly/w, biweekly, triweekly, monthly/m, bimonthly, or yearly/y".to_string())
+    }
+}
+
 fn get_form_error(
     form_kind: &FormKind,
     step: usize,
@@ -543,6 +568,14 @@ fn get_form_error(
             if let Err(err_msg) = validate_due_date(&due_val) {
                 return Some((err_msg, step_idx));
             }
+        }
+    }
+
+    // 4. Validate recurrence (index 5)
+    if total > 5 && !(in_insert_mode && step == 5) {
+        let rec_val = get_val(5);
+        if let Err(err_msg) = validate_recurrence(&rec_val) {
+            return Some((err_msg, 5));
         }
     }
 

@@ -14,6 +14,62 @@ pub struct Tag {
     pub name: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub enum Recurrence {
+    Daily,
+    Weekly,
+    Biweekly,
+    Triweekly,
+    Monthly,
+    Bimonthly,
+    Yearly,
+}
+
+impl Recurrence {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_lowercase().trim() {
+            "daily" | "d" => Some(Recurrence::Daily),
+            "weekly" | "w" => Some(Recurrence::Weekly),
+            "biweekly" => Some(Recurrence::Biweekly),
+            "triweekly" => Some(Recurrence::Triweekly),
+            "monthly" | "m" => Some(Recurrence::Monthly),
+            "bimonthly" => Some(Recurrence::Bimonthly),
+            "yearly" | "y" => Some(Recurrence::Yearly),
+            _ => None,
+        }
+    }
+
+    pub fn to_str(self) -> &'static str {
+        match self {
+            Recurrence::Daily => "daily",
+            Recurrence::Weekly => "weekly",
+            Recurrence::Biweekly => "biweekly",
+            Recurrence::Triweekly => "triweekly",
+            Recurrence::Monthly => "monthly",
+            Recurrence::Bimonthly => "bimonthly",
+            Recurrence::Yearly => "yearly",
+        }
+    }
+
+    pub fn next_date(self, from: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<chrono::Utc> {
+        match self {
+            Recurrence::Daily => from + chrono::Days::new(1),
+            Recurrence::Weekly => from + chrono::Days::new(7),
+            Recurrence::Biweekly => from + chrono::Days::new(14),
+            Recurrence::Triweekly => from + chrono::Days::new(21),
+            Recurrence::Monthly => from
+                .checked_add_months(chrono::Months::new(1))
+                .unwrap_or(from),
+            Recurrence::Bimonthly => from
+                .checked_add_months(chrono::Months::new(2))
+                .unwrap_or(from),
+            Recurrence::Yearly => from
+                .checked_add_months(chrono::Months::new(12))
+                .unwrap_or(from),
+        }
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Task {
     pub id: i64,
@@ -22,6 +78,7 @@ pub struct Task {
     pub description: String,
     pub priority: i64,
     pub due_date: Option<DateTime<Utc>>,
+    pub recurrence: Option<String>,
     pub done: bool,
     pub created_at: DateTime<Utc>,
 }
@@ -57,6 +114,7 @@ pub struct TaskPatch {
     pub description: Option<String>,
     pub priority: Option<i64>,
     pub due_date: Option<Option<chrono::DateTime<chrono::Utc>>>,
+    pub recurrence: Option<Option<String>>,
     pub done: Option<bool>,
 }
 

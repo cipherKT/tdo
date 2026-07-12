@@ -295,6 +295,7 @@ pub fn form_prompt(kind: &FormKind, step: usize) -> &'static str {
             2 => "tags",
             3 => "priority",
             4 => "due_date (optional)",
+            5 => "recurrence",
             _ => "",
         },
         FormKind::CreateSubtask { .. } | FormKind::ModifySubtask { .. } => match step {
@@ -308,7 +309,7 @@ pub fn form_prompt(kind: &FormKind, step: usize) -> &'static str {
 pub fn form_total_steps(kind: &FormKind) -> usize {
     match kind {
         FormKind::CreateProject | FormKind::ModifyProject { .. } => 3,
-        FormKind::CreateTask | FormKind::ModifyTask { .. } => 5,
+        FormKind::CreateTask | FormKind::ModifyTask { .. } => 6,
         FormKind::CreateSubtask { .. } | FormKind::ModifySubtask { .. } => 2,
     }
 }
@@ -644,6 +645,56 @@ mod tests {
     }
 
     #[test]
+    fn test_app_task_creation_form_with_recurrence() {
+        let engine = Engine::open(":memory:").unwrap();
+        engine.create_project("proj", "desc").unwrap();
+
+        let mut state = AppState::new(&engine).unwrap();
+
+        // Enter project
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+
+        // Start task creation
+        handle_key(&mut state, make_key(KeyCode::Char('/')), &engine).unwrap();
+        for c in "rec_task".chars() {
+            handle_key(&mut state, make_key(KeyCode::Char(c)), &engine).unwrap();
+        }
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+
+        // Navigate to Step 5: recurrence
+        for _ in 0..5 {
+            handle_key(&mut state, make_key(KeyCode::Char('j')), &engine).unwrap();
+        }
+
+        // Edit recurrence field
+        handle_key(&mut state, make_key(KeyCode::Char('i')), &engine).unwrap();
+        for c in "weekly".chars() {
+            handle_key(&mut state, make_key(KeyCode::Char(c)), &engine).unwrap();
+        }
+        handle_key(&mut state, make_key(KeyCode::Esc), &engine).unwrap();
+
+        // Submit form
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+
+        // Verify task was created with correct recurrence and default due date (today)
+        assert!(matches!(state.mode, AppMode::Browsing));
+        assert_eq!(state.tasks.len(), 1);
+        if let TaskListItem::Task(ref task) = state.tasks[0] {
+            assert_eq!(task.name, "rec_task");
+            assert_eq!(task.recurrence, Some("weekly".to_string()));
+            let today = chrono::Utc::now()
+                .date_naive()
+                .and_hms_opt(0, 0, 0)
+                .unwrap()
+                .and_utc();
+            assert_eq!(task.due_date, Some(today));
+        } else {
+            panic!("expected task");
+        }
+    }
+
+    #[test]
     fn test_app_project_deletion_confirm() {
         let engine = Engine::open(":memory:").unwrap();
         engine.create_project("p1", "desc").unwrap();
@@ -667,7 +718,7 @@ mod tests {
         engine.create_project("p2", "desc2").unwrap();
 
         // Add a task to p1
-        engine.create_task("p1", "t1", "d", 1, None).unwrap();
+        engine.create_task("p1", "t1", "d", 1, None, None).unwrap();
 
         // Initialize state
         let mut state = AppState::new(&engine).unwrap();
@@ -829,7 +880,7 @@ mod tests {
         engine.create_project("proj", "desc").unwrap();
         let today = chrono::Utc::now();
         engine
-            .create_task("proj", "task1", "desc", 1, Some(today))
+            .create_task("proj", "task1", "desc", 1, Some(today), None)
             .unwrap();
 
         let mut state = AppState::new(&engine).unwrap();
@@ -848,7 +899,7 @@ mod tests {
         let engine = Engine::open(":memory:").unwrap();
         engine.create_project("proj", "desc").unwrap();
         engine
-            .create_task("proj", "task1", "desc", 1, None)
+            .create_task("proj", "task1", "desc", 1, None, None)
             .unwrap();
 
         let mut state = AppState::new(&engine).unwrap();
@@ -910,7 +961,7 @@ mod tests {
         let engine = Engine::open(":memory:").unwrap();
         engine.create_project("proj", "desc").unwrap();
         engine
-            .create_task("proj", "existing_task", "desc", 1, None)
+            .create_task("proj", "existing_task", "desc", 1, None, None)
             .unwrap();
 
         let mut state = AppState::new(&engine).unwrap();

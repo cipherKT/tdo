@@ -8,6 +8,7 @@ pub enum StoreError {
     PendingSubtasks(String),
     NotFound(String),
     InvalidDueDate(String),
+    InvalidRecurrence(String),
     Db(rusqlite::Error),
 }
 
@@ -34,6 +35,7 @@ impl fmt::Display for StoreError {
                 write!(f, "no project, task or subtask named '{}' was found", name)
             }
             StoreError::InvalidDueDate(msg) => write!(f, "invalid due date: {}", msg),
+            StoreError::InvalidRecurrence(msg) => write!(f, "invalid recurrence: {}", msg),
             StoreError::Db(e) => write!(f, "database error: {}", e),
         }
     }

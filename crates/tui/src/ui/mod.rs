@@ -249,10 +249,18 @@ fn render_form_modal(
             (crate::app::FormKind::CreateTask | crate::app::FormKind::ModifyTask { .. }, 4) => {
                 "[Insert]  Esc: accept  ·  e.g. today, tomorrow, +3, +1w, mon, 07-04, 15"
             }
+            (crate::app::FormKind::CreateTask | crate::app::FormKind::ModifyTask { .. }, 5) => {
+                "[Insert]  Esc: accept  ·  daily/d, weekly/w, biweekly, triweekly, monthly/m, bimonthly, yearly/y"
+            }
             _ => "[Insert Mode]  Esc: back to normal  ·  Type to edit",
         }
     } else {
-        "[Normal Mode]  j/k: navigate  ·  i: edit field  ·  Enter: save  ·  Esc: cancel"
+        match (kind, step) {
+            (crate::app::FormKind::CreateTask | crate::app::FormKind::ModifyTask { .. }, 5) => {
+                "[Normal]  i: edit  ·  daily/d, weekly/w, biweekly, triweekly, monthly/m, bimonthly, yearly/y"
+            }
+            _ => "[Normal Mode]  j/k: navigate  ·  i: edit field  ·  Enter: save  ·  Esc: cancel",
+        }
     };
     lines.push(Line::from(vec![Span::styled(
         footer_text,

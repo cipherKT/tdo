@@ -170,6 +170,19 @@ pub(super) fn render_metadata(frame: &mut Frame, state: &AppState, area: Rect) {
                         ]));
                         lines.push(Line::from(""));
 
+                        if let Some(ref rec) = task.recurrence {
+                            lines.push(Line::from(vec![
+                                Span::styled(
+                                    "RECURRENCE: ",
+                                    Style::default()
+                                        .fg(state.theme.label)
+                                        .add_modifier(Modifier::DIM),
+                                ),
+                                Span::raw(rec.clone()),
+                            ]));
+                            lines.push(Line::from(""));
+                        }
+
                         lines.push(Line::from(vec![Span::styled(
                             "TAGS",
                             Style::default()

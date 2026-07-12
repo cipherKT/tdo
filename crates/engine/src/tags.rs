@@ -120,6 +120,22 @@ impl Engine {
         Ok(tags.collect::<Result<Vec<_>, _>>()?)
     }
 
+    pub fn get_tags_for_task_by_id(&self, task_id: i64) -> Result<Vec<Tag>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT tags.id, tags.name
+             FROM tags
+             JOIN task_tags ON tags.id = task_tags.tag_id
+             WHERE task_tags.task_id = ?1",
+        )?;
+        let tags = stmt.query_map([task_id], |row| {
+            Ok(Tag {
+                id: row.get(0)?,
+                name: row.get(1)?,
+            })
+        })?;
+        Ok(tags.collect::<Result<Vec<_>, _>>()?)
+    }
+
     pub fn remove_tag_from_task(
         &self,
         project_name: &str,

@@ -10,14 +10,31 @@ impl Engine {
         description: &str,
         priority: i64,
         due_date: Option<chrono::DateTime<chrono::Utc>>,
+        recurrence: Option<String>,
     ) -> Result<Task, StoreError> {
         let project = self.get_project_by_name(project_name)?;
         let project_id = project.id;
 
+        if let Some(ref rec) = recurrence {
+            if !rec.trim().is_empty() && crate::models::Recurrence::parse(rec).is_none() {
+                return Err(StoreError::InvalidRecurrence(rec.clone()));
+            }
+        }
+
+        let mut final_due = due_date;
+        if final_due.is_none() {
+            if let Some(ref rec) = recurrence {
+                if !rec.trim().is_empty() {
+                    let today = chrono::Utc::now().date_naive();
+                    final_due = today.and_hms_opt(0, 0, 0).map(|dt| dt.and_utc());
+                }
+            }
+        }
+
         let result = self.conn.execute(
-            "INSERT INTO tasks (project_id, name, description, priority, due_date, done)
-             VALUES (?1, ?2, ?3, ?4, ?5, FALSE)",
-            (project_id, name, description, priority, due_date),
+            "INSERT INTO tasks (project_id, name, description, priority, due_date, recurrence, done)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, FALSE)",
+            (project_id, name, description, priority, final_due, recurrence),
         );
 
         match result {
@@ -36,7 +53,7 @@ impl Engine {
 
     pub(crate) fn get_task_by_id(&self, id: i64) -> Result<Task, StoreError> {
         let task = self.conn.query_row(
-            "SELECT id, project_id, name, description, priority, due_date, done, created_at
+            "SELECT id, project_id, name, description, priority, due_date, recurrence, done, created_at
              FROM tasks WHERE id = ?1",
             [id],
             |row| {
@@ -47,8 +64,9 @@ impl Engine {
                     description: row.get(3)?,
                     priority: row.get(4)?,
                     due_date: row.get(5)?,
-                    done: row.get(6)?,
-                    created_at: row.get(7)?,
+                    recurrence: row.get(6)?,
+                    done: row.get(7)?,
+                    created_at: row.get(8)?,
                 })
             },
         )?;
@@ -58,7 +76,7 @@ impl Engine {
     pub fn list_tasks(&self, project_name: &str) -> Result<Vec<Task>, StoreError> {
         let project = self.get_project_by_name(project_name)?;
         let mut stmt = self.conn.prepare(
-            "SELECT id, project_id, name, description, priority, due_date, done, created_at
+            "SELECT id, project_id, name, description, priority, due_date, recurrence, done, created_at
              FROM tasks WHERE project_id = ?1 ORDER BY due_date ASC NULLS LAST",
         )?;
         let rows = stmt.query_map([project.id], |row| {
@@ -69,8 +87,9 @@ impl Engine {
                 description: row.get(3)?,
                 priority: row.get(4)?,
                 due_date: row.get(5)?,
-                done: row.get(6)?,
-                created_at: row.get(7)?,
+                recurrence: row.get(6)?,
+                done: row.get(7)?,
+                created_at: row.get(8)?,
             })
         })?;
         let tasks: Vec<Task> = rows.collect::<Result<Vec<_>, _>>()?;
@@ -83,7 +102,7 @@ impl Engine {
         task_name: &str,
     ) -> Result<Task, StoreError> {
         let result = self.conn.query_row(
-            "SELECT t.id, t.project_id, t.name, t.description, t.priority, t.due_date, t.done, t.created_at
+            "SELECT t.id, t.project_id, t.name, t.description, t.priority, t.due_date, t.recurrence, t.done, t.created_at
              FROM tasks t
              JOIN projects p ON t.project_id = p.id
              WHERE p.name = ?1 AND t.name = ?2",
@@ -96,8 +115,9 @@ impl Engine {
                     description: row.get(3)?,
                     priority: row.get(4)?,
                     due_date: row.get(5)?,
-                    done: row.get(6)?,
-                    created_at: row.get(7)?,
+                    recurrence: row.get(6)?,
+                    done: row.get(7)?,
+                    created_at: row.get(8)?,
                 })
             },
         );
@@ -147,6 +167,34 @@ impl Engine {
             params.push(Box::new(due_date));
         }
 
+        if let Some(ref recurrence) = patch.recurrence {
+            if let Some(rec) = recurrence {
+                if !rec.trim().is_empty() && crate::models::Recurrence::parse(rec).is_none() {
+                    return Err(StoreError::InvalidRecurrence(rec.clone()));
+                }
+            }
+            sets.push("recurrence = ?");
+            params.push(Box::new(recurrence.clone()));
+        }
+
+        // If we are changing to a repetitive task, and it doesn't currently have a due date (and we aren't setting one), default to today.
+        if let Some(Some(ref rec)) = patch.recurrence {
+            if !rec.trim().is_empty() {
+                let current_task = self.get_task_by_name(project_name, task_name)?;
+                let will_have_due = match patch.due_date {
+                    Some(Some(_)) => true,
+                    Some(None) => false,
+                    None => current_task.due_date.is_some(),
+                };
+                if !will_have_due {
+                    sets.push("due_date = ?");
+                    let today = chrono::Utc::now().date_naive();
+                    let today_dt = today.and_hms_opt(0, 0, 0).map(|dt| dt.and_utc());
+                    params.push(Box::new(today_dt));
+                }
+            }
+        }
+
         if let Some(done) = patch.done {
             if done {
                 let task = self.get_task_by_name(project_name, task_name)?;
@@ -193,7 +241,68 @@ impl Engine {
         }
 
         let updated_name = patch.name.as_deref().unwrap_or(task_name);
-        self.get_task_by_name(project_name, updated_name).map(Some)
+        let task = self.get_task_by_name(project_name, updated_name)?;
+
+        if let Some(true) = patch.done {
+            if let Some(ref rec_str) = task.recurrence {
+                if !rec_str.trim().is_empty() {
+                    self.handle_recurrence_clone(&task, rec_str)?;
+                }
+            }
+        }
+
+        Ok(Some(task))
+    }
+
+    fn handle_recurrence_clone(&self, task: &Task, rec_str: &str) -> Result<(), StoreError> {
+        let recurrence = crate::models::Recurrence::parse(rec_str)
+            .ok_or_else(|| StoreError::InvalidRecurrence(rec_str.to_string()))?;
+
+        let base_date = task.due_date.unwrap_or_else(chrono::Utc::now);
+        let next_due = recurrence.next_date(base_date);
+
+        self.conn.execute(
+            "INSERT INTO tasks (project_id, name, description, priority, due_date, recurrence, done)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, FALSE)",
+            (
+                task.project_id,
+                &task.name,
+                &task.description,
+                task.priority,
+                Some(next_due),
+                Some(rec_str.to_string()),
+            ),
+        )?;
+        let new_task_id = self.conn.last_insert_rowid();
+
+        // Copy tags
+        let tags = self.get_tags_for_task_by_id(task.id)?;
+        for tag in tags {
+            self.conn.execute(
+                "INSERT OR IGNORE INTO task_tags (task_id, tag_id) VALUES (?, ?)",
+                (new_task_id, tag.id),
+            )?;
+        }
+
+        // Copy subtasks
+        let subtasks = self.get_subtasks_for_task(task.id)?;
+        for sub in subtasks {
+            let sub_due = sub.due_date.map(|sd| {
+                if let Some(orig_task_due) = task.due_date {
+                    let diff = sd.signed_duration_since(orig_task_due);
+                    next_due + diff
+                } else {
+                    recurrence.next_date(sd)
+                }
+            });
+
+            self.conn.execute(
+                "INSERT INTO subtasks (task_id, name, due_date, done) VALUES (?1, ?2, ?3, FALSE)",
+                (new_task_id, &sub.name, sub_due),
+            )?;
+        }
+
+        Ok(())
     }
 
     pub fn toggle_done(&self, project_name: &str, task_name: &str) -> Result<Task, StoreError> {
@@ -204,6 +313,7 @@ impl Engine {
             description: None,
             priority: None,
             due_date: None,
+            recurrence: None,
         };
         self.modify_task(project_name, task_name, patch)
             .map(|t| t.expect("task must exist since we fetched it"))
@@ -211,14 +321,14 @@ impl Engine {
 
     pub fn list_today_tasks(&self) -> Result<Vec<NextTask>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT t.id, t.project_id, t.name, t.description, t.priority, t.due_date, t.done, t.created_at, p.name as project_name
+            "SELECT t.id, t.project_id, t.name, t.description, t.priority, t.due_date, t.recurrence, t.done, t.created_at, p.name as project_name
              FROM tasks t
              JOIN projects p ON t.project_id = p.id
              WHERE t.done = FALSE
                AND t.due_date IS NOT NULL
                AND DATE(t.due_date) <= DATE('now', 'localtime')
              UNION ALL
-             SELECT s.id, t.project_id, t.name || ' ↪ ' || s.name as name, '' as description, t.priority, s.due_date, s.done, s.created_at, p.name as project_name
+             SELECT s.id, t.project_id, t.name || ' ↪ ' || s.name as name, '' as description, t.priority, s.due_date, NULL as recurrence, s.done, s.created_at, p.name as project_name
              FROM subtasks s
              JOIN tasks t ON s.task_id = t.id
              JOIN projects p ON t.project_id = p.id
@@ -236,10 +346,11 @@ impl Engine {
                     description: row.get(3)?,
                     priority: row.get(4)?,
                     due_date: row.get(5)?,
-                    done: row.get(6)?,
-                    created_at: row.get(7)?,
+                    recurrence: row.get(6)?,
+                    done: row.get(7)?,
+                    created_at: row.get(8)?,
                 },
-                project_name: row.get(8)?,
+                project_name: row.get(9)?,
             })
         })?;
         let tasks = rows.collect::<Result<Vec<_>, _>>()?;
@@ -266,7 +377,7 @@ impl Engine {
     ) -> Result<Vec<NextTask>, StoreError> {
         let date_str = format!("{:04}-{:02}-{:02}", year, month, day);
         let mut stmt = self.conn.prepare(
-            "SELECT t.id, t.project_id, t.name, t.description, t.priority, t.due_date, t.done, t.created_at, p.name as project_name
+            "SELECT t.id, t.project_id, t.name, t.description, t.priority, t.due_date, t.recurrence, t.done, t.created_at, p.name as project_name
              FROM tasks t
              JOIN projects p ON t.project_id = p.id
              WHERE t.done = 0 AND t.due_date IS NOT NULL AND DATE(t.due_date) = ?1
@@ -281,10 +392,11 @@ impl Engine {
                     description: row.get(3)?,
                     priority: row.get(4)?,
                     due_date: row.get(5)?,
-                    done: row.get(6)?,
-                    created_at: row.get(7)?,
+                    recurrence: row.get(6)?,
+                    done: row.get(7)?,
+                    created_at: row.get(8)?,
                 },
-                project_name: row.get(8)?,
+                project_name: row.get(9)?,
             })
         })?;
         let tasks = rows.collect::<Result<Vec<_>, _>>()?;
@@ -305,12 +417,12 @@ impl Engine {
 
     pub fn list_pending_today_tasks(&self) -> Result<Vec<NextTask>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT t.id, t.project_id, t.name, t.description, t.priority, t.due_date, t.done, t.created_at, p.name as project_name
+            "SELECT t.id, t.project_id, t.name, t.description, t.priority, t.due_date, t.recurrence, t.done, t.created_at, p.name as project_name
              FROM tasks t
              JOIN projects p ON t.project_id = p.id
              WHERE t.done = 0 AND t.due_date IS NOT NULL AND DATE(t.due_date) <= DATE('now', 'localtime')
              UNION ALL
-             SELECT s.id, t.project_id, t.name || ' ↪ ' || s.name as name, '' as description, t.priority, s.due_date, s.done, s.created_at, p.name as project_name
+             SELECT s.id, t.project_id, t.name || ' ↪ ' || s.name as name, '' as description, t.priority, s.due_date, NULL as recurrence, s.done, s.created_at, p.name as project_name
              FROM subtasks s
              JOIN tasks t ON s.task_id = t.id
              JOIN projects p ON t.project_id = p.id
@@ -326,10 +438,11 @@ impl Engine {
                     description: row.get(3)?,
                     priority: row.get(4)?,
                     due_date: row.get(5)?,
-                    done: row.get(6)?,
-                    created_at: row.get(7)?,
+                    recurrence: row.get(6)?,
+                    done: row.get(7)?,
+                    created_at: row.get(8)?,
                 },
-                project_name: row.get(8)?,
+                project_name: row.get(9)?,
             })
         })?;
         let tasks = rows.collect::<Result<Vec<_>, _>>()?;
