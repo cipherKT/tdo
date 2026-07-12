@@ -7,6 +7,7 @@ impl Engine {
         project_name: &str,
         task_name: &str,
         name: &str,
+        due_date: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<Subtask, StoreError> {
         let task = self.get_task_by_name(project_name, task_name)?;
         let task_id = task.id;
@@ -17,9 +18,17 @@ impl Engine {
                 .execute("UPDATE tasks SET done = FALSE WHERE id = ?", [task_id])?;
         }
 
+        if let (Some(sub_due), Some(task_due)) = (due_date, task.due_date) {
+            if sub_due > task_due {
+                return Err(StoreError::InvalidDueDate(
+                    "subtask due date cannot be after parent task due date".to_string(),
+                ));
+            }
+        }
+
         let result = self.conn.execute(
-            "INSERT INTO subtasks (task_id, name, done) VALUES (?1, ?2, FALSE)",
-            (task_id, name),
+            "INSERT INTO subtasks (task_id, name, due_date, done) VALUES (?1, ?2, ?3, FALSE)",
+            (task_id, name, due_date),
         );
 
         match result {
@@ -38,15 +47,16 @@ impl Engine {
 
     pub(crate) fn get_subtask_by_id(&self, id: i64) -> Result<Subtask, StoreError> {
         let subtask = self.conn.query_row(
-            "SELECT id, task_id, name, done, created_at FROM subtasks WHERE id = ?1",
+            "SELECT id, task_id, name, due_date, done, created_at FROM subtasks WHERE id = ?1",
             [id],
             |row| {
                 Ok(Subtask {
                     id: row.get(0)?,
                     task_id: row.get(1)?,
                     name: row.get(2)?,
-                    done: row.get(3)?,
-                    created_at: row.get(4)?,
+                    due_date: row.get(3)?,
+                    done: row.get(4)?,
+                    created_at: row.get(5)?,
                 })
             },
         )?;
@@ -60,15 +70,16 @@ impl Engine {
     ) -> Result<Vec<Subtask>, StoreError> {
         let task = self.get_task_by_name(project_name, task_name)?;
         let mut stmt = self.conn.prepare(
-            "SELECT id, task_id, name, done, created_at FROM subtasks WHERE task_id = ?1 ORDER BY created_at ASC",
+            "SELECT id, task_id, name, due_date, done, created_at FROM subtasks WHERE task_id = ?1 ORDER BY created_at ASC",
         )?;
         let rows = stmt.query_map([task.id], |row| {
             Ok(Subtask {
                 id: row.get(0)?,
                 task_id: row.get(1)?,
                 name: row.get(2)?,
-                done: row.get(3)?,
-                created_at: row.get(4)?,
+                due_date: row.get(3)?,
+                done: row.get(4)?,
+                created_at: row.get(5)?,
             })
         })?;
         let subtasks = rows.collect::<Result<Vec<_>, _>>()?;
@@ -77,15 +88,16 @@ impl Engine {
 
     pub fn get_subtasks_for_task(&self, task_id: i64) -> Result<Vec<Subtask>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, task_id, name, done, created_at FROM subtasks WHERE task_id = ?1 ORDER BY created_at ASC",
+            "SELECT id, task_id, name, due_date, done, created_at FROM subtasks WHERE task_id = ?1 ORDER BY created_at ASC",
         )?;
         let rows = stmt.query_map([task_id], |row| {
             Ok(Subtask {
                 id: row.get(0)?,
                 task_id: row.get(1)?,
                 name: row.get(2)?,
-                done: row.get(3)?,
-                created_at: row.get(4)?,
+                due_date: row.get(3)?,
+                done: row.get(4)?,
+                created_at: row.get(5)?,
             })
         })?;
         let subtasks = rows.collect::<Result<Vec<_>, _>>()?;
@@ -114,15 +126,16 @@ impl Engine {
     ) -> Result<Subtask, StoreError> {
         let task = self.get_task_by_name(project_name, task_name)?;
         let subtask = self.conn.query_row(
-            "SELECT id, task_id, name, done, created_at FROM subtasks WHERE task_id = ?1 AND name = ?2",
+            "SELECT id, task_id, name, due_date, done, created_at FROM subtasks WHERE task_id = ?1 AND name = ?2",
             (task.id, subtask_name),
             |row| {
                 Ok(Subtask {
                     id: row.get(0)?,
                     task_id: row.get(1)?,
                     name: row.get(2)?,
-                    done: row.get(3)?,
-                    created_at: row.get(4)?,
+                    due_date: row.get(3)?,
+                    done: row.get(4)?,
+                    created_at: row.get(5)?,
                 })
             },
         )?;
@@ -153,15 +166,16 @@ impl Engine {
     ) -> Result<Option<Subtask>, StoreError> {
         let task = self.get_task_by_name(project_name, task_name)?;
         let subtask = self.conn.query_row(
-            "SELECT id, task_id, name, done, created_at FROM subtasks WHERE task_id = ?1 AND name = ?2",
+            "SELECT id, task_id, name, due_date, done, created_at FROM subtasks WHERE task_id = ?1 AND name = ?2",
             (task.id, subtask_name),
             |row| {
                 Ok(Subtask {
                     id: row.get(0)?,
                     task_id: row.get(1)?,
                     name: row.get(2)?,
-                    done: row.get(3)?,
-                    created_at: row.get(4)?,
+                    due_date: row.get(3)?,
+                    done: row.get(4)?,
+                    created_at: row.get(5)?,
                 })
             },
         )?;
@@ -172,6 +186,18 @@ impl Engine {
         if let Some(ref new_name) = patch.name {
             sets.push("name = ?");
             params.push(Box::new(new_name.clone()));
+        }
+
+        if let Some(due_date) = patch.due_date {
+            if let (Some(sub_due), Some(task_due)) = (due_date, task.due_date) {
+                if sub_due > task_due {
+                    return Err(StoreError::InvalidDueDate(
+                        "subtask due date cannot be after parent task due date".to_string(),
+                    ));
+                }
+            }
+            sets.push("due_date = ?");
+            params.push(Box::new(due_date));
         }
 
         if let Some(new_done) = patch.done {
@@ -214,15 +240,16 @@ impl Engine {
 
         let updated_name = patch.name.as_deref().unwrap_or(subtask_name);
         self.conn.query_row(
-            "SELECT id, task_id, name, done, created_at FROM subtasks WHERE task_id = ?1 AND name = ?2",
+            "SELECT id, task_id, name, due_date, done, created_at FROM subtasks WHERE task_id = ?1 AND name = ?2",
             (task.id, updated_name),
             |row| {
                 Ok(Subtask {
                     id: row.get(0)?,
                     task_id: row.get(1)?,
                     name: row.get(2)?,
-                    done: row.get(3)?,
-                    created_at: row.get(4)?,
+                    due_date: row.get(3)?,
+                    done: row.get(4)?,
+                    created_at: row.get(5)?,
                 })
             },
         ).map(Some).map_err(StoreError::from)

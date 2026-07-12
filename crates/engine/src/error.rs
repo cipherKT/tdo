@@ -7,6 +7,7 @@ pub enum StoreError {
     SubtaskNameTaken(String),
     PendingSubtasks(String),
     NotFound(String),
+    InvalidDueDate(String),
     Db(rusqlite::Error),
 }
 
@@ -32,6 +33,7 @@ impl fmt::Display for StoreError {
             StoreError::NotFound(name) => {
                 write!(f, "no project, task or subtask named '{}' was found", name)
             }
+            StoreError::InvalidDueDate(msg) => write!(f, "invalid due date: {}", msg),
             StoreError::Db(e) => write!(f, "database error: {}", e),
         }
     }

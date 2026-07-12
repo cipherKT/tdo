@@ -217,7 +217,15 @@ impl Engine {
              WHERE t.done = FALSE
                AND t.due_date IS NOT NULL
                AND DATE(t.due_date) <= DATE('now', 'localtime')
-             ORDER BY t.priority ASC, t.due_date ASC, t.name ASC",
+             UNION ALL
+             SELECT s.id, t.project_id, t.name || ' ↪ ' || s.name as name, '' as description, t.priority, s.due_date, s.done, s.created_at, p.name as project_name
+             FROM subtasks s
+             JOIN tasks t ON s.task_id = t.id
+             JOIN projects p ON t.project_id = p.id
+             WHERE s.done = FALSE
+               AND s.due_date IS NOT NULL
+               AND DATE(s.due_date) <= DATE('now', 'localtime')
+             ORDER BY priority ASC, due_date ASC, name ASC",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok(NextTask {
@@ -300,8 +308,14 @@ impl Engine {
             "SELECT t.id, t.project_id, t.name, t.description, t.priority, t.due_date, t.done, t.created_at, p.name as project_name
              FROM tasks t
              JOIN projects p ON t.project_id = p.id
-             WHERE t.done = 0 AND t.due_date IS NOT NULL AND DATE(t.due_date) = DATE('now', 'localtime')
-             ORDER BY t.priority ASC, t.name ASC",
+             WHERE t.done = 0 AND t.due_date IS NOT NULL AND DATE(t.due_date) <= DATE('now', 'localtime')
+             UNION ALL
+             SELECT s.id, t.project_id, t.name || ' ↪ ' || s.name as name, '' as description, t.priority, s.due_date, s.done, s.created_at, p.name as project_name
+             FROM subtasks s
+             JOIN tasks t ON s.task_id = t.id
+             JOIN projects p ON t.project_id = p.id
+             WHERE s.done = 0 AND s.due_date IS NOT NULL AND DATE(s.due_date) <= DATE('now', 'localtime')
+             ORDER BY priority ASC, name ASC",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok(NextTask {

@@ -64,6 +64,7 @@ impl Engine {
                 id INTEGER PRIMARY KEY,
                 task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
                 name TEXT NOT NULL,
+                due_date TIMESTAMP,
                 done BOOLEAN NOT NULL DEFAULT FALSE,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
@@ -71,7 +72,9 @@ impl Engine {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_name_per_project ON tasks(name, project_id);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_subtasks_name_per_task ON subtasks(name, task_id);
             ",
-        )
+        )?;
+        let _ = self.conn.execute("ALTER TABLE subtasks ADD COLUMN due_date TIMESTAMP", []);
+        Ok(())
     }
 }
 
@@ -306,12 +309,12 @@ mod tests {
             .unwrap();
 
         // 1. Create subtask
-        let st1 = engine.create_subtask("proj", "task1", "sub1").unwrap();
+        let st1 = engine.create_subtask("proj", "task1", "sub1", None).unwrap();
         assert_eq!(st1.name, "sub1");
         assert!(!st1.done);
 
         // Duplicate subtask name should fail
-        let err = engine.create_subtask("proj", "task1", "sub1").unwrap_err();
+        let err = engine.create_subtask("proj", "task1", "sub1", None).unwrap_err();
         assert!(matches!(err, StoreError::SubtaskNameTaken(_)));
 
         // 2. List subtasks
@@ -332,7 +335,7 @@ mod tests {
         assert!(t1.done);
 
         // 6. Creating a new subtask (starts undone) should reopen the task
-        let st2 = engine.create_subtask("proj", "task1", "sub2").unwrap();
+        let st2 = engine.create_subtask("proj", "task1", "sub2", None).unwrap();
         assert_eq!(st2.name, "sub2");
         assert!(!st2.done);
 

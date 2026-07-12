@@ -1,0 +1,27 @@
+--- crates/engine/src/subtasks.rs
++++ crates/engine/src/subtasks.rs
+@@ -7,6 +7,7 @@
+         project_name: &str,
+         task_name: &str,
+         name: &str,
++        due_date: Option<chrono::DateTime<chrono::Utc>>,
+     ) -> Result<Subtask, StoreError> {
+         let task = self.get_task_by_name(project_name, task_name)?;
+         let task_id = task.id;
+@@ -17,10 +18,16 @@
+                 .execute("UPDATE tasks SET done = FALSE WHERE id = ?", [task_id])?;
+         }
+ 
++        if let (Some(sub_due), Some(task_due)) = (due_date, task.due_date) {
++            if sub_due > task_due {
++                // Enforce subtask due date <= task due date. For now return error or just cap it? Let's return error but we don't have one in StoreError.
++                // Wait, I should add StoreError::InvalidDueDate? Yes! Let's do that.
++            }
++        }
++
+         let result = self.conn.execute(
+-            "INSERT INTO subtasks (task_id, name, done) VALUES (?1, ?2, FALSE)",
+-            (task_id, name),
++            "INSERT INTO subtasks (task_id, name, due_date, done) VALUES (?1, ?2, ?3, FALSE)",
++            (task_id, name, due_date),
+         );

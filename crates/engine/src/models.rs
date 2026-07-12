@@ -31,6 +31,7 @@ pub struct Subtask {
     pub id: i64,
     pub task_id: i64,
     pub name: String,
+    pub due_date: Option<DateTime<Utc>>,
     pub done: bool,
     pub created_at: DateTime<Utc>,
 }
@@ -38,6 +39,7 @@ pub struct Subtask {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SubtaskPatch {
     pub name: Option<String>,
+    pub due_date: Option<Option<DateTime<Utc>>>,
     pub done: Option<bool>,
 }
 
