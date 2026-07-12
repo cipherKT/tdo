@@ -84,7 +84,12 @@ pub(super) fn handle_form(
             match key.code {
                 KeyCode::Esc | KeyCode::Enter => {
                     let mut val = current_input.clone();
-                    if *step == 4 && !val.trim().is_empty() {
+                    let is_due_date = match &form_kind {
+                        FormKind::CreateTask | FormKind::ModifyTask { .. } => *step == 4,
+                        FormKind::CreateSubtask { .. } | FormKind::ModifySubtask { .. } => *step == 1,
+                        _ => false,
+                    };
+                    if is_due_date && !val.trim().is_empty() {
                         let today = chrono::Local::now().date_naive();
                         if let Ok(d) = super::date_parser::parse_due_date(&val, today) {
                             val = d.format("%Y-%m-%d").to_string();
@@ -191,11 +196,22 @@ fn submit_create_subtask(
     parent_task_name: &str,
 ) -> anyhow::Result<()> {
     let name = answers.get(0).map(|s| s.as_str()).unwrap_or("");
+    let due_date = answers.get(1).and_then(|s| {
+        if s.is_empty() {
+            None
+        } else {
+            let today = chrono::Local::now().date_naive();
+            super::date_parser::parse_due_date(s, today)
+                .ok()
+                .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc())
+        }
+    });
+
     if let crate::app::AppContext::Project {
         name: project_name, ..
     } = &state.context
     {
-        match engine.create_subtask(project_name, parent_task_name, name) {
+        match engine.create_subtask(project_name, parent_task_name, name, due_date) {
             Ok(_) => {
                 crate::app::update_stats(state, engine)?;
                 state.mode = AppMode::Browsing;
@@ -218,6 +234,17 @@ fn submit_modify_subtask(
     original_name: &str,
 ) -> anyhow::Result<()> {
     let new_name = answers.get(0).map(|s| s.as_str()).unwrap_or("");
+    let due_date = answers.get(1).and_then(|s| {
+        if s.is_empty() {
+            None
+        } else {
+            let today = chrono::Local::now().date_naive();
+            super::date_parser::parse_due_date(s, today)
+                .ok()
+                .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc())
+        }
+    });
+
     if let crate::app::AppContext::Project {
         name: project_name, ..
     } = &state.context
@@ -229,6 +256,7 @@ fn submit_modify_subtask(
                 None
             },
             done: None,
+            due_date: Some(due_date),
         };
         match engine.modify_subtask(project_name, parent_task_name, original_name, patch) {
             Ok(_) => {
@@ -502,11 +530,19 @@ fn get_form_error(
         }
     }
 
-    // 3. Validate due date (index 4)
-    if total > 4 && !(in_insert_mode && step == 4) {
-        let due_val = get_val(4);
-        if let Err(err_msg) = validate_due_date(&due_val) {
-            return Some((err_msg, 4));
+    // 3. Validate due date
+    let due_date_step = match form_kind {
+        FormKind::CreateTask | FormKind::ModifyTask { .. } => Some(4),
+        FormKind::CreateSubtask { .. } | FormKind::ModifySubtask { .. } => Some(1),
+        _ => None,
+    };
+
+    if let Some(step_idx) = due_date_step {
+        if total > step_idx && !(in_insert_mode && step == step_idx) {
+            let due_val = get_val(step_idx);
+            if let Err(err_msg) = validate_due_date(&due_val) {
+                return Some((err_msg, step_idx));
+            }
         }
     }
 

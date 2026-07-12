@@ -294,11 +294,12 @@ pub fn form_prompt(kind: &FormKind, step: usize) -> &'static str {
             1 => "description",
             2 => "tags",
             3 => "priority",
-            4 => "due date",
+            4 => "due_date (optional)",
             _ => "",
         },
         FormKind::CreateSubtask { .. } | FormKind::ModifySubtask { .. } => match step {
             0 => "name",
+            1 => "due_date (optional)",
             _ => "",
         },
     }
@@ -308,7 +309,7 @@ pub fn form_total_steps(kind: &FormKind) -> usize {
     match kind {
         FormKind::CreateProject | FormKind::ModifyProject { .. } => 3,
         FormKind::CreateTask | FormKind::ModifyTask { .. } => 5,
-        FormKind::CreateSubtask { .. } | FormKind::ModifySubtask { .. } => 1,
+        FormKind::CreateSubtask { .. } | FormKind::ModifySubtask { .. } => 2,
     }
 }
 
