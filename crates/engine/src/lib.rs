@@ -359,4 +359,35 @@ mod tests {
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "sub2");
     }
+    #[test]
+    fn test_subtask_due_dates() {
+        let engine = Engine::open(":memory:").unwrap();
+        engine.create_project("proj", "desc").unwrap();
+        
+        let today = chrono::Utc::now();
+        let tomorrow = today + chrono::Days::new(1);
+        let yesterday = today - chrono::Days::new(1);
+
+        engine.create_task("proj", "task1", "desc", 1, Some(today)).unwrap();
+
+        // 1. Create subtask with valid due date (yesterday < today)
+        let st1 = engine.create_subtask("proj", "task1", "sub1", Some(yesterday)).unwrap();
+        assert_eq!(st1.due_date, Some(yesterday));
+
+        // 2. Create subtask with invalid due date (tomorrow > today)
+        let err = engine.create_subtask("proj", "task1", "sub2", Some(tomorrow)).unwrap_err();
+        assert!(matches!(err, StoreError::InvalidDueDate(_)));
+        
+        // 3. Modify subtask with invalid due date
+        let err = engine.modify_subtask("proj", "task1", "sub1", SubtaskPatch { name: None, done: None, due_date: Some(Some(tomorrow)) }).unwrap_err();
+        assert!(matches!(err, StoreError::InvalidDueDate(_)));
+
+        // 4. Verify subtasks appear in list_today_tasks
+        // We expect task1 (due today) and sub1 (due yesterday, so overdue <= today)
+        let list = engine.list_today_tasks().unwrap();
+        let has_task = list.iter().any(|t| t.task.name == "task1");
+        let has_subtask = list.iter().any(|t| t.task.name == "task1 ↪ sub1");
+        assert!(has_task);
+        assert!(has_subtask);
+    }
 }
