@@ -2,15 +2,13 @@ use crate::{Engine, StoreError, Subtask, SubtaskPatch};
 use rusqlite::Result;
 
 impl Engine {
-    pub fn create_subtask(
+    pub fn create_subtask_by_id(
         &self,
-        project_name: &str,
-        task_name: &str,
+        task_id: i64,
         name: &str,
         due_date: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<Subtask, StoreError> {
-        let task = self.get_task_by_name(project_name, task_name)?;
-        let task_id = task.id;
+        let task = self.get_task_by_id(task_id)?;
 
         // Invariant: If parent task was done, reopen it.
         if task.done {
@@ -43,6 +41,17 @@ impl Engine {
             }
             Err(e) => Err(StoreError::Db(e)),
         }
+    }
+
+    pub fn create_subtask(
+        &self,
+        project_name: &str,
+        task_name: &str,
+        name: &str,
+        due_date: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<Subtask, StoreError> {
+        let task = self.get_task_by_name(project_name, task_name)?;
+        self.create_subtask_by_id(task.id, name, due_date)
     }
 
     pub(crate) fn get_subtask_by_id(&self, id: i64) -> Result<Subtask, StoreError> {
@@ -104,6 +113,13 @@ impl Engine {
         Ok(subtasks)
     }
 
+    pub fn delete_subtask_by_id(&self, id: i64) -> Result<bool, StoreError> {
+        let result = self
+            .conn
+            .execute("DELETE FROM subtasks WHERE id = ?1", [id])?;
+        Ok(result > 0)
+    }
+
     pub fn delete_subtask(
         &self,
         project_name: &str,
@@ -111,34 +127,17 @@ impl Engine {
         subtask_name: &str,
     ) -> Result<bool, StoreError> {
         let task = self.get_task_by_name(project_name, task_name)?;
-        let result = self.conn.execute(
-            "DELETE FROM subtasks WHERE task_id = ?1 AND name = ?2",
+        let subtask_id = self.conn.query_row(
+            "SELECT id FROM subtasks WHERE task_id = ?1 AND name = ?2",
             (task.id, subtask_name),
+            |row| row.get::<_, i64>(0),
         )?;
-        Ok(result > 0)
+        self.delete_subtask_by_id(subtask_id)
     }
 
-    pub fn toggle_subtask_done(
-        &self,
-        project_name: &str,
-        task_name: &str,
-        subtask_name: &str,
-    ) -> Result<Subtask, StoreError> {
-        let task = self.get_task_by_name(project_name, task_name)?;
-        let subtask = self.conn.query_row(
-            "SELECT id, task_id, name, due_date, done, created_at FROM subtasks WHERE task_id = ?1 AND name = ?2",
-            (task.id, subtask_name),
-            |row| {
-                Ok(Subtask {
-                    id: row.get(0)?,
-                    task_id: row.get(1)?,
-                    name: row.get(2)?,
-                    due_date: row.get(3)?,
-                    done: row.get(4)?,
-                    created_at: row.get(5)?,
-                })
-            },
-        )?;
+    pub fn toggle_subtask_done_by_id(&self, id: i64) -> Result<Subtask, StoreError> {
+        let subtask = self.get_subtask_by_id(id)?;
+        let task = self.get_task_by_id(subtask.task_id)?;
 
         let new_done = !subtask.done;
 
@@ -157,28 +156,28 @@ impl Engine {
         self.get_subtask_by_id(subtask.id)
     }
 
-    pub fn modify_subtask(
+    pub fn toggle_subtask_done(
         &self,
         project_name: &str,
         task_name: &str,
         subtask_name: &str,
+    ) -> Result<Subtask, StoreError> {
+        let task = self.get_task_by_name(project_name, task_name)?;
+        let subtask_id = self.conn.query_row(
+            "SELECT id FROM subtasks WHERE task_id = ?1 AND name = ?2",
+            (task.id, subtask_name),
+            |row| row.get::<_, i64>(0),
+        )?;
+        self.toggle_subtask_done_by_id(subtask_id)
+    }
+
+    pub fn modify_subtask_by_id(
+        &self,
+        id: i64,
         patch: SubtaskPatch,
     ) -> Result<Option<Subtask>, StoreError> {
-        let task = self.get_task_by_name(project_name, task_name)?;
-        let subtask = self.conn.query_row(
-            "SELECT id, task_id, name, due_date, done, created_at FROM subtasks WHERE task_id = ?1 AND name = ?2",
-            (task.id, subtask_name),
-            |row| {
-                Ok(Subtask {
-                    id: row.get(0)?,
-                    task_id: row.get(1)?,
-                    name: row.get(2)?,
-                    due_date: row.get(3)?,
-                    done: row.get(4)?,
-                    created_at: row.get(5)?,
-                })
-            },
-        )?;
+        let subtask = self.get_subtask_by_id(id)?;
+        let task = self.get_task_by_id(subtask.task_id)?;
 
         let mut sets = Vec::new();
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -227,7 +226,7 @@ impl Engine {
             params.len() + 1
         );
 
-        params.push(Box::new(subtask.id));
+        params.push(Box::new(id));
 
         let rows_affected = self.conn.execute(
             &sql,
@@ -238,20 +237,22 @@ impl Engine {
             return Ok(None);
         }
 
-        let updated_name = patch.name.as_deref().unwrap_or(subtask_name);
-        self.conn.query_row(
-            "SELECT id, task_id, name, due_date, done, created_at FROM subtasks WHERE task_id = ?1 AND name = ?2",
-            (task.id, updated_name),
-            |row| {
-                Ok(Subtask {
-                    id: row.get(0)?,
-                    task_id: row.get(1)?,
-                    name: row.get(2)?,
-                    due_date: row.get(3)?,
-                    done: row.get(4)?,
-                    created_at: row.get(5)?,
-                })
-            },
-        ).map(Some).map_err(StoreError::from)
+        self.get_subtask_by_id(id).map(Some)
+    }
+
+    pub fn modify_subtask(
+        &self,
+        project_name: &str,
+        task_name: &str,
+        subtask_name: &str,
+        patch: SubtaskPatch,
+    ) -> Result<Option<Subtask>, StoreError> {
+        let task = self.get_task_by_name(project_name, task_name)?;
+        let subtask_id = self.conn.query_row(
+            "SELECT id FROM subtasks WHERE task_id = ?1 AND name = ?2",
+            (task.id, subtask_name),
+            |row| row.get::<_, i64>(0),
+        )?;
+        self.modify_subtask_by_id(subtask_id, patch)
     }
 }

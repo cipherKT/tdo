@@ -43,15 +43,18 @@ pub enum FormKind {
     CreateProject,
     CreateTask,
     CreateSubtask {
+        parent_task_id: i64,
         parent_task_name: String,
     },
     ModifyProject {
         original_name: String,
     },
     ModifyTask {
+        task_id: i64,
         original_name: String,
     },
     ModifySubtask {
+        subtask_id: i64,
         parent_task_name: String,
         original_name: String,
     },

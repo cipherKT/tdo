@@ -105,7 +105,8 @@ impl Engine {
             "SELECT t.id, t.project_id, t.name, t.description, t.priority, t.due_date, t.recurrence, t.done, t.created_at
              FROM tasks t
              JOIN projects p ON t.project_id = p.id
-             WHERE p.name = ?1 AND t.name = ?2",
+             WHERE p.name = ?1 AND t.name = ?2
+             ORDER BY t.done ASC, t.due_date DESC",
             (project_name, task_name),
             |row| {
                 Ok(Task {
@@ -130,20 +131,19 @@ impl Engine {
         }
     }
 
-    pub fn delete_task(&self, project_name: &str, task_name: &str) -> Result<bool, StoreError> {
-        let result = self.conn.execute(
-            "DELETE FROM tasks WHERE project_id = (SELECT id FROM projects WHERE name = ?1) AND name = ?2",
-            (project_name, task_name),
-        )?;
+    pub fn delete_task_by_id(&self, id: i64) -> Result<bool, StoreError> {
+        let result = self.conn.execute("DELETE FROM tasks WHERE id = ?1", [id])?;
         Ok(result > 0)
     }
 
-    pub fn modify_task(
-        &self,
-        project_name: &str,
-        task_name: &str,
-        patch: TaskPatch,
-    ) -> Result<Option<Task>, StoreError> {
+    pub fn delete_task(&self, project_name: &str, task_name: &str) -> Result<bool, StoreError> {
+        let task = self.get_task_by_name(project_name, task_name)?;
+        self.delete_task_by_id(task.id)
+    }
+
+    pub fn modify_task_by_id(&self, id: i64, patch: TaskPatch) -> Result<Option<Task>, StoreError> {
+        let current_task = self.get_task_by_id(id)?;
+
         let mut sets: Vec<&str> = Vec::new();
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
@@ -180,7 +180,6 @@ impl Engine {
         // If we are changing to a repetitive task, and it doesn't currently have a due date (and we aren't setting one), default to today.
         if let Some(Some(ref rec)) = patch.recurrence {
             if !rec.trim().is_empty() {
-                let current_task = self.get_task_by_name(project_name, task_name)?;
                 let will_have_due = match patch.due_date {
                     Some(Some(_)) => true,
                     Some(None) => false,
@@ -197,14 +196,13 @@ impl Engine {
 
         if let Some(done) = patch.done {
             if done {
-                let task = self.get_task_by_name(project_name, task_name)?;
                 let pending_count: i64 = self.conn.query_row(
                     "SELECT COUNT(*) FROM subtasks WHERE task_id = ? AND done = FALSE",
-                    [task.id],
+                    [current_task.id],
                     |row| row.get(0),
                 )?;
                 if pending_count > 0 {
-                    return Err(StoreError::PendingSubtasks(task_name.to_string()));
+                    return Err(StoreError::PendingSubtasks(current_task.name.clone()));
                 }
             }
             sets.push("done = ?");
@@ -212,7 +210,7 @@ impl Engine {
         }
 
         if sets.is_empty() {
-            return self.get_task_by_name(project_name, task_name).map(Some);
+            return Ok(Some(current_task));
         }
 
         let placeholders: Vec<String> = sets
@@ -222,14 +220,12 @@ impl Engine {
             .collect();
 
         let sql = format!(
-            "UPDATE tasks SET {} WHERE project_id = (SELECT id FROM projects WHERE name = ?{}) AND name = ?{}",
+            "UPDATE tasks SET {} WHERE id = ?{}",
             placeholders.join(", "),
             params.len() + 1,
-            params.len() + 2,
         );
 
-        params.push(Box::new(project_name.to_string()));
-        params.push(Box::new(task_name.to_string()));
+        params.push(Box::new(id));
 
         let rows_affected = self.conn.execute(
             &sql,
@@ -240,8 +236,7 @@ impl Engine {
             return Ok(None);
         }
 
-        let updated_name = patch.name.as_deref().unwrap_or(task_name);
-        let task = self.get_task_by_name(project_name, updated_name)?;
+        let task = self.get_task_by_id(id)?;
 
         if let Some(true) = patch.done {
             if let Some(ref rec_str) = task.recurrence {
@@ -252,6 +247,16 @@ impl Engine {
         }
 
         Ok(Some(task))
+    }
+
+    pub fn modify_task(
+        &self,
+        project_name: &str,
+        task_name: &str,
+        patch: TaskPatch,
+    ) -> Result<Option<Task>, StoreError> {
+        let task = self.get_task_by_name(project_name, task_name)?;
+        self.modify_task_by_id(task.id, patch)
     }
 
     fn handle_recurrence_clone(&self, task: &Task, rec_str: &str) -> Result<(), StoreError> {
@@ -305,8 +310,8 @@ impl Engine {
         Ok(())
     }
 
-    pub fn toggle_done(&self, project_name: &str, task_name: &str) -> Result<Task, StoreError> {
-        let task = self.get_task_by_name(project_name, task_name)?;
+    pub fn toggle_done_by_id(&self, id: i64) -> Result<Task, StoreError> {
+        let task = self.get_task_by_id(id)?;
         let patch = TaskPatch {
             done: Some(!task.done),
             name: None,
@@ -315,8 +320,13 @@ impl Engine {
             due_date: None,
             recurrence: None,
         };
-        self.modify_task(project_name, task_name, patch)
+        self.modify_task_by_id(id, patch)
             .map(|t| t.expect("task must exist since we fetched it"))
+    }
+
+    pub fn toggle_done(&self, project_name: &str, task_name: &str) -> Result<Task, StoreError> {
+        let task = self.get_task_by_name(project_name, task_name)?;
+        self.toggle_done_by_id(task.id)
     }
 
     pub fn list_today_tasks(&self) -> Result<Vec<NextTask>, StoreError> {

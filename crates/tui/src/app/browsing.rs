@@ -53,22 +53,14 @@ pub(super) fn handle_browsing(
             recompute_filter(state);
         }
         KeyCode::Char(' ') => {
-            if let AppContext::Project { name, .. } = &state.context {
+            if let AppContext::Project { name: _, .. } = &state.context {
                 if let Some(item) = state.tasks.get(state.selected) {
                     match item {
                         super::TaskListItem::Task(task) => {
-                            let project_name = name.clone();
-                            let task_name = task.name.clone();
-                            let _ = engine.toggle_done(&project_name, &task_name);
+                            let _ = engine.toggle_done_by_id(task.id);
                         }
-                        super::TaskListItem::Subtask {
-                            subtask,
-                            parent_task_name,
-                        } => {
-                            let project_name = name.clone();
-                            let parent_name = parent_task_name.clone();
-                            let sub_name = subtask.name.clone();
-                            engine.toggle_subtask_done(&project_name, &parent_name, &sub_name)?;
+                        super::TaskListItem::Subtask { subtask, .. } => {
+                            engine.toggle_subtask_done_by_id(subtask.id)?;
                         }
                     }
                     super::update_stats(state, engine)?;
@@ -162,7 +154,7 @@ pub(super) fn handle_browsing(
                 if let Some(item) = state.tasks.get(state.selected) {
                     match item {
                         super::TaskListItem::Task(task) => {
-                            let tags = engine.get_tags_for_task(name, &task.name)?;
+                            let tags = engine.get_tags_for_task_by_id(task.id)?;
                             let tags_str = tags
                                 .iter()
                                 .map(|t| format!("#{}", t.name))
@@ -181,6 +173,7 @@ pub(super) fn handle_browsing(
                             ];
                             state.mode = AppMode::MultiStepForm {
                                 kind: FormKind::ModifyTask {
+                                    task_id: task.id,
                                     original_name: task.name.clone(),
                                 },
                                 step: 0,
@@ -200,6 +193,7 @@ pub(super) fn handle_browsing(
                             let prefill = vec![subtask.name.clone()];
                             state.mode = AppMode::MultiStepForm {
                                 kind: FormKind::ModifySubtask {
+                                    subtask_id: subtask.id,
                                     parent_task_name: parent_task_name.clone(),
                                     original_name: subtask.name.clone(),
                                 },
@@ -223,15 +217,19 @@ pub(super) fn handle_browsing(
             } = &state.context
             {
                 if let Some(item) = state.tasks.get(state.selected) {
-                    let parent_task_name = match item {
-                        super::TaskListItem::Task(task) => task.name.clone(),
+                    let (parent_task_id, parent_task_name) = match item {
+                        super::TaskListItem::Task(task) => (task.id, task.name.clone()),
                         super::TaskListItem::Subtask {
-                            parent_task_name, ..
-                        } => parent_task_name.clone(),
+                            subtask,
+                            parent_task_name,
+                        } => (subtask.task_id, parent_task_name.clone()),
                     };
                     let prefill = vec![String::new()];
                     state.mode = AppMode::MultiStepForm {
-                        kind: FormKind::CreateSubtask { parent_task_name },
+                        kind: FormKind::CreateSubtask {
+                            parent_task_id,
+                            parent_task_name,
+                        },
                         step: 0,
                         name: project_name.clone(),
                         answers: prefill,

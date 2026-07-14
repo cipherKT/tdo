@@ -171,20 +171,20 @@ pub(super) fn handle_form(
             FormKind::CreateTask => {
                 submit_create_task(state, engine, &answers, &name)?;
             }
-            FormKind::CreateSubtask { parent_task_name } => {
-                submit_create_subtask(state, engine, &answers, parent_task_name)?;
+            FormKind::CreateSubtask { parent_task_id, .. } => {
+                submit_create_subtask(state, engine, &answers, *parent_task_id)?;
             }
             FormKind::ModifyProject { original_name } => {
                 submit_modify_project(state, engine, &answers, original_name)?;
             }
-            FormKind::ModifyTask { original_name } => {
-                submit_modify_task(state, engine, &answers, original_name, &name)?;
-            }
-            FormKind::ModifySubtask {
-                parent_task_name,
+            FormKind::ModifyTask {
+                task_id,
                 original_name,
             } => {
-                submit_modify_subtask(state, engine, &answers, parent_task_name, original_name)?;
+                submit_modify_task(state, engine, &answers, *task_id, original_name)?;
+            }
+            FormKind::ModifySubtask { subtask_id, .. } => {
+                submit_modify_subtask(state, engine, &answers, *subtask_id)?;
             }
         }
     }
@@ -195,7 +195,7 @@ fn submit_create_subtask(
     state: &mut AppState,
     engine: &Engine,
     answers: &[String],
-    parent_task_name: &str,
+    parent_task_id: i64,
 ) -> anyhow::Result<()> {
     let name = answers.get(0).map(|s| s.as_str()).unwrap_or("");
     let due_date = answers.get(1).and_then(|s| {
@@ -209,20 +209,15 @@ fn submit_create_subtask(
         }
     });
 
-    if let crate::app::AppContext::Project {
-        name: project_name, ..
-    } = &state.context
-    {
-        match engine.create_subtask(project_name, parent_task_name, name, due_date) {
-            Ok(_) => {
-                crate::app::update_stats(state, engine)?;
-                state.mode = AppMode::Browsing;
-                state.selected = 0;
-            }
-            Err(e) => {
-                state.mode = AppMode::Browsing;
-                eprintln!("error creating subtask: {}", e);
-            }
+    match engine.create_subtask_by_id(parent_task_id, name, due_date) {
+        Ok(_) => {
+            crate::app::update_stats(state, engine)?;
+            state.mode = AppMode::Browsing;
+            state.selected = 0;
+        }
+        Err(e) => {
+            state.mode = AppMode::Browsing;
+            eprintln!("error creating subtask: {}", e);
         }
     }
     Ok(())
@@ -232,8 +227,7 @@ fn submit_modify_subtask(
     state: &mut AppState,
     engine: &Engine,
     answers: &[String],
-    parent_task_name: &str,
-    original_name: &str,
+    subtask_id: i64,
 ) -> anyhow::Result<()> {
     let new_name = answers.get(0).map(|s| s.as_str()).unwrap_or("");
     let due_date = answers.get(1).and_then(|s| {
@@ -247,28 +241,19 @@ fn submit_modify_subtask(
         }
     });
 
-    if let crate::app::AppContext::Project {
-        name: project_name, ..
-    } = &state.context
-    {
-        let patch = engine::SubtaskPatch {
-            name: if new_name != original_name {
-                Some(new_name.to_string())
-            } else {
-                None
-            },
-            done: None,
-            due_date: Some(due_date),
-        };
-        match engine.modify_subtask(project_name, parent_task_name, original_name, patch) {
-            Ok(_) => {
-                crate::app::update_stats(state, engine)?;
-                state.mode = AppMode::Browsing;
-            }
-            Err(e) => {
-                state.mode = AppMode::Browsing;
-                eprintln!("error modifying subtask: {}", e);
-            }
+    let patch = engine::SubtaskPatch {
+        name: Some(new_name.to_string()),
+        done: None,
+        due_date: Some(due_date),
+    };
+    match engine.modify_subtask_by_id(subtask_id, patch) {
+        Ok(_) => {
+            crate::app::update_stats(state, engine)?;
+            state.mode = AppMode::Browsing;
+        }
+        Err(e) => {
+            state.mode = AppMode::Browsing;
+            eprintln!("error modifying subtask: {}", e);
         }
     }
     Ok(())
@@ -406,8 +391,8 @@ fn submit_modify_task(
     state: &mut AppState,
     engine: &Engine,
     answers: &[String],
+    task_id: i64,
     original_name: &str,
-    project_name: &str,
 ) -> anyhow::Result<()> {
     let new_name = answers.get(0).map(|s| s.as_str()).unwrap_or("");
     let description = answers.get(1).map(|s| s.as_str()).unwrap_or("");
@@ -439,19 +424,14 @@ fn submit_modify_task(
         done: None,
     };
 
-    match engine.modify_task(project_name, original_name, patch) {
+    match engine.modify_task_by_id(task_id, patch) {
         Ok(_) => {
             if !tags_raw.is_empty() {
-                let lookup_name = if new_name != original_name {
-                    new_name
-                } else {
-                    original_name
-                };
                 let tags: Vec<&str> = tags_raw
                     .split_whitespace()
                     .map(|t| t.trim_start_matches('#'))
                     .collect();
-                let _ = engine.add_tags_to_task(project_name, lookup_name, &tags);
+                let _ = engine.add_tags_to_task_by_id(task_id, &tags);
             }
             crate::app::update_stats(state, engine)?;
             state.mode = AppMode::Browsing;

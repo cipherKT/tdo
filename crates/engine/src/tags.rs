@@ -80,14 +80,7 @@ impl Engine {
         Ok(result > 0)
     }
 
-    pub fn add_tags_to_task(
-        &self,
-        project_name: &str,
-        task_name: &str,
-        tags: &[&str],
-    ) -> Result<(), StoreError> {
-        let task = self.get_task_by_name(project_name, task_name)?;
-        let task_id = task.id;
+    pub fn add_tags_to_task_by_id(&self, task_id: i64, tags: &[&str]) -> Result<(), StoreError> {
         for tag in tags {
             let temp_tag = self.get_or_create_tag(tag)?;
             self.conn.execute(
@@ -98,26 +91,23 @@ impl Engine {
         Ok(())
     }
 
+    pub fn add_tags_to_task(
+        &self,
+        project_name: &str,
+        task_name: &str,
+        tags: &[&str],
+    ) -> Result<(), StoreError> {
+        let task = self.get_task_by_name(project_name, task_name)?;
+        self.add_tags_to_task_by_id(task.id, tags)
+    }
+
     pub fn get_tags_for_task(
         &self,
         project_name: &str,
         task_name: &str,
     ) -> Result<Vec<Tag>, StoreError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT tags.id, tags.name
-             FROM tags
-             JOIN task_tags ON tags.id = task_tags.tag_id
-             JOIN tasks ON task_tags.task_id = tasks.id
-             JOIN projects ON tasks.project_id = projects.id
-             WHERE tasks.name = ?1 AND projects.name = ?2",
-        )?;
-        let tags = stmt.query_map([task_name, project_name], |row| {
-            Ok(Tag {
-                id: row.get(0)?,
-                name: row.get(1)?,
-            })
-        })?;
-        Ok(tags.collect::<Result<Vec<_>, _>>()?)
+        let task = self.get_task_by_name(project_name, task_name)?;
+        self.get_tags_for_task_by_id(task.id)
     }
 
     pub fn get_tags_for_task_by_id(&self, task_id: i64) -> Result<Vec<Tag>, StoreError> {
@@ -136,6 +126,19 @@ impl Engine {
         Ok(tags.collect::<Result<Vec<_>, _>>()?)
     }
 
+    pub fn remove_tag_from_task_by_id(
+        &self,
+        task_id: i64,
+        tag_name: &str,
+    ) -> Result<bool, StoreError> {
+        let tag = self.get_tag_by_name(tag_name)?;
+        let result = self.conn.execute(
+            "DELETE FROM task_tags WHERE task_id = ?1 AND tag_id = ?2",
+            [task_id, tag.id],
+        )?;
+        Ok(result > 0)
+    }
+
     pub fn remove_tag_from_task(
         &self,
         project_name: &str,
@@ -143,11 +146,6 @@ impl Engine {
         tag_name: &str,
     ) -> Result<bool, StoreError> {
         let task = self.get_task_by_name(project_name, task_name)?;
-        let tag = self.get_tag_by_name(tag_name)?;
-        let result = self.conn.execute(
-            "DELETE FROM task_tags WHERE task_id = ?1 AND tag_id = ?2",
-            [task.id, tag.id],
-        )?;
-        Ok(result > 0)
+        self.remove_tag_from_task_by_id(task.id, tag_name)
     }
 }

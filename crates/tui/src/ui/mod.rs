@@ -151,19 +151,18 @@ fn render_form_modal(
     let heading = match kind {
         crate::app::FormKind::CreateProject => "✦  CREATE NEW PROJECT  ✦".to_string(),
         crate::app::FormKind::CreateTask => "✦  CREATE NEW TASK  ✦".to_string(),
-        crate::app::FormKind::CreateSubtask { parent_task_name } => {
+        crate::app::FormKind::CreateSubtask {
+            parent_task_name, ..
+        } => {
             format!("✦  ADD SUBTASK TO: {}  ✦", parent_task_name)
         }
         crate::app::FormKind::ModifyProject { original_name } => {
             format!("✦  EDIT PROJECT: {}  ✦", original_name)
         }
-        crate::app::FormKind::ModifyTask { original_name } => {
+        crate::app::FormKind::ModifyTask { original_name, .. } => {
             format!("✦  EDIT TASK: {}  ✦", original_name)
         }
-        crate::app::FormKind::ModifySubtask {
-            parent_task_name: _,
-            original_name,
-        } => {
+        crate::app::FormKind::ModifySubtask { original_name, .. } => {
             format!("✦  EDIT SUBTASK: {}  ✦", original_name)
         }
     };

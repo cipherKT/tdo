@@ -23,22 +23,14 @@ pub(super) fn handle_confirm(
                     state.filtered_projects = (0..state.projects.len()).collect();
                     state.selected = state.selected.min(state.projects.len().saturating_sub(1));
                 }
-                AppContext::Project { name, .. } => {
-                    let project_name = name.clone();
+                AppContext::Project { name: _, .. } => {
                     if let Some(item) = state.tasks.get(state.selected) {
                         match item {
                             super::TaskListItem::Task(task) => {
-                                engine.delete_task(&project_name, &task.name)?;
+                                engine.delete_task_by_id(task.id)?;
                             }
-                            super::TaskListItem::Subtask {
-                                subtask,
-                                parent_task_name,
-                            } => {
-                                engine.delete_subtask(
-                                    &project_name,
-                                    parent_task_name,
-                                    &subtask.name,
-                                )?;
+                            super::TaskListItem::Subtask { subtask, .. } => {
+                                engine.delete_subtask_by_id(subtask.id)?;
                             }
                         }
                     }

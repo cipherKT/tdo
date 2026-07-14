@@ -494,4 +494,44 @@ mod tests {
         assert_eq!(tags.len(), 1);
         assert_eq!(tags[0].name, "tag1");
     }
+
+    #[test]
+    fn test_task_recurrence_multiple_instances() {
+        let engine = Engine::open(":memory:").unwrap();
+        engine.create_project("proj", "desc").unwrap();
+
+        let today = chrono::Utc::now();
+        // Create a repetitive task (daily)
+        let _t = engine
+            .create_task(
+                "proj",
+                "daily_task",
+                "desc",
+                1,
+                Some(today),
+                Some("daily".to_string()),
+            )
+            .unwrap();
+
+        // 1. Complete the first instance
+        let updated1 = engine.toggle_done("proj", "daily_task").unwrap();
+        assert!(updated1.done);
+
+        // 2. Fetch the newly spawned second instance and complete it too
+        let tasks = engine.list_tasks("proj").unwrap();
+        assert_eq!(tasks.len(), 2);
+        let pending_task = tasks.iter().find(|tk| !tk.done).unwrap();
+        assert_eq!(pending_task.name, "daily_task");
+
+        let updated2 = engine.toggle_done_by_id(pending_task.id).unwrap();
+        assert!(updated2.done);
+
+        // 3. There should now be 3 tasks: 2 completed and 1 pending
+        let tasks = engine.list_tasks("proj").unwrap();
+        assert_eq!(tasks.len(), 3);
+        let completed_count = tasks.iter().filter(|tk| tk.done).count();
+        assert_eq!(completed_count, 2);
+        let pending_count = tasks.iter().filter(|tk| !tk.done).count();
+        assert_eq!(pending_count, 1);
+    }
 }
