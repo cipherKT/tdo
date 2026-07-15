@@ -957,6 +957,59 @@ mod tests {
         } else {
             panic!("expected task");
         }
+
+        // Reopen task and subtask for editing tests
+        handle_key(&mut state, make_key(KeyCode::Char(' ')), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Char('j')), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Char(' ')), &engine).unwrap();
+
+        // Now edit subtask 'sub1' by pressing 'i'
+        handle_key(&mut state, make_key(KeyCode::Char('i')), &engine).unwrap();
+        assert!(matches!(
+            state.mode,
+            AppMode::MultiStepForm {
+                kind: FormKind::ModifySubtask { .. },
+                ..
+            }
+        ));
+
+        // Go to step 1 (due date)
+        handle_key(&mut state, make_key(KeyCode::Char('j')), &engine).unwrap();
+        // Insert a due date "today"
+        handle_key(&mut state, make_key(KeyCode::Char('i')), &engine).unwrap();
+        for c in "today".chars() {
+            handle_key(&mut state, make_key(KeyCode::Char(c)), &engine).unwrap();
+        }
+        handle_key(&mut state, make_key(KeyCode::Esc), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap(); // Confirm save
+
+        // Check that subtask now has a due date
+        assert!(matches!(state.mode, AppMode::Browsing));
+        if let TaskListItem::Subtask { ref subtask, .. } = state.tasks[1] {
+            assert!(subtask.due_date.is_some());
+        } else {
+            panic!("expected subtask");
+        }
+
+        // Now modify the subtask again (only rename it, don't touch due date)
+        handle_key(&mut state, make_key(KeyCode::Char('i')), &engine).unwrap();
+        // step 0 (name): insert "-new"
+        handle_key(&mut state, make_key(KeyCode::Char('i')), &engine).unwrap();
+        for c in "-new".chars() {
+            handle_key(&mut state, make_key(KeyCode::Char(c)), &engine).unwrap();
+        }
+        handle_key(&mut state, make_key(KeyCode::Esc), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap();
+        handle_key(&mut state, make_key(KeyCode::Enter), &engine).unwrap(); // Confirm save
+
+        // Check that due date didn't vanish
+        if let TaskListItem::Subtask { ref subtask, .. } = state.tasks[1] {
+            assert_eq!(subtask.name, "sub1-new");
+            assert!(subtask.due_date.is_some());
+        } else {
+            panic!("expected subtask");
+        }
     }
 
     #[test]

@@ -171,10 +171,29 @@ pub(super) fn render_tasks_list(frame: &mut Frame, state: &AppState, area: Rect)
 
                 let check = if subtask.done { "[x] " } else { "[ ] " };
 
-                Line::from(vec![Span::styled(
-                    format!("{}    {}{}", prefix, check, subtask.name),
-                    done_style,
-                )])
+                let due_str = match &subtask.due_date {
+                    Some(d) => {
+                        let today = chrono::Local::now().date_naive();
+                        let diff = (d.date_naive() - today).num_days();
+                        if diff < 0 {
+                            format!("overdue {}d", diff.abs())
+                        } else if diff == 0 {
+                            "due today".to_string()
+                        } else {
+                            format!("due in {}d", diff)
+                        }
+                    }
+                    None => "no due date".to_string(),
+                };
+
+                Line::from(vec![
+                    Span::styled(
+                        format!("{}    {}{}", prefix, check, subtask.name),
+                        done_style,
+                    ),
+                    Span::raw("  "),
+                    Span::styled(due_str, Style::default().fg(state.theme.label)),
+                ])
             }
         };
 

@@ -245,7 +245,8 @@ fn render_form_modal(
             (crate::app::FormKind::CreateTask | crate::app::FormKind::ModifyTask { .. }, 3) => {
                 "[Insert]  Esc: accept  ·  Enter priority (1, 2, or 3)"
             }
-            (crate::app::FormKind::CreateTask | crate::app::FormKind::ModifyTask { .. }, 4) => {
+            (crate::app::FormKind::CreateTask | crate::app::FormKind::ModifyTask { .. }, 4)
+            | (crate::app::FormKind::CreateSubtask { .. } | crate::app::FormKind::ModifySubtask { .. }, 1) => {
                 "[Insert]  Esc: accept  ·  e.g. today, tomorrow, +3, +1w, mon, 07-04, 15"
             }
             (crate::app::FormKind::CreateTask | crate::app::FormKind::ModifyTask { .. }, 5) => {

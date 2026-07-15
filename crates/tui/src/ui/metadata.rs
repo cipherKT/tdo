@@ -240,6 +240,19 @@ pub(super) fn render_metadata(frame: &mut Frame, state: &AppState, area: Rect) {
                         lines.push(Line::from(""));
 
                         lines.push(Line::from(vec![Span::styled(
+                            "DUE DATE",
+                            Style::default()
+                                .fg(state.theme.label)
+                                .add_modifier(Modifier::DIM),
+                        )]));
+                        let due_str = match &subtask.due_date {
+                            Some(d) => d.format("%Y-%m-%d").to_string(),
+                            None => "None".to_string(),
+                        };
+                        lines.push(Line::from(vec![Span::raw(due_str)]));
+                        lines.push(Line::from(""));
+
+                        lines.push(Line::from(vec![Span::styled(
                             "STATUS",
                             Style::default()
                                 .fg(state.theme.label)

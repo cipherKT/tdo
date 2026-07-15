@@ -88,6 +88,7 @@ pub(super) fn handle_search(
                                 String::new(),
                                 "3".to_string(),
                                 String::new(),
+                                String::new(),
                             ],
                             current_input: String::new(),
                             warning: None,

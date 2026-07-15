@@ -170,6 +170,7 @@ pub(super) fn handle_browsing(
                                 tags_str,
                                 task.priority.to_string(),
                                 due_str,
+                                task.recurrence.clone().unwrap_or_default(),
                             ];
                             state.mode = AppMode::MultiStepForm {
                                 kind: FormKind::ModifyTask {
@@ -190,7 +191,11 @@ pub(super) fn handle_browsing(
                             subtask,
                             parent_task_name,
                         } => {
-                            let prefill = vec![subtask.name.clone()];
+                            let due_str = subtask
+                                .due_date
+                                .map(|d| d.with_timezone(&chrono::Local).format("%Y-%m-%d").to_string())
+                                .unwrap_or_default();
+                            let prefill = vec![subtask.name.clone(), due_str];
                             state.mode = AppMode::MultiStepForm {
                                 kind: FormKind::ModifySubtask {
                                     subtask_id: subtask.id,
@@ -224,7 +229,7 @@ pub(super) fn handle_browsing(
                             parent_task_name,
                         } => (subtask.task_id, parent_task_name.clone()),
                     };
-                    let prefill = vec![String::new()];
+                    let prefill = vec![String::new(), String::new()];
                     state.mode = AppMode::MultiStepForm {
                         kind: FormKind::CreateSubtask {
                             parent_task_id,

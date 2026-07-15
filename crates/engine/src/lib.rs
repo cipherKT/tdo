@@ -430,6 +430,19 @@ mod tests {
         let has_subtask = list.iter().any(|t| t.task.name == "task1 ↪ sub1");
         assert!(has_task);
         assert!(has_subtask);
+
+        // 5. Verify subtasks appear in list_tasks_due_on and count_tasks_due_on
+        use chrono::Datelike;
+        let yesterday_local = yesterday.with_timezone(&chrono::Local);
+        let year = yesterday_local.year();
+        let month = yesterday_local.month();
+        let day = yesterday_local.day();
+        let count = engine.count_tasks_due_on(year, month, day).unwrap();
+        assert_eq!(count, 1);
+
+        let due_list = engine.list_tasks_due_on(year, month, day).unwrap();
+        assert_eq!(due_list.len(), 1);
+        assert_eq!(due_list[0].task.name, "task1 ↪ sub1");
     }
 
     #[test]

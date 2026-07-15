@@ -391,7 +391,13 @@ impl Engine {
              FROM tasks t
              JOIN projects p ON t.project_id = p.id
              WHERE t.done = 0 AND t.due_date IS NOT NULL AND DATE(t.due_date) = ?1
-             ORDER BY t.priority ASC, t.name ASC",
+             UNION ALL
+             SELECT s.id, t.project_id, t.name || ' ↪ ' || s.name as name, '' as description, t.priority, s.due_date, NULL as recurrence, s.done, s.created_at, p.name as project_name
+             FROM subtasks s
+             JOIN tasks t ON s.task_id = t.id
+             JOIN projects p ON t.project_id = p.id
+             WHERE s.done = 0 AND s.due_date IS NOT NULL AND DATE(s.due_date) = ?1
+             ORDER BY priority ASC, name ASC",
         )?;
         let rows = stmt.query_map([&date_str], |row| {
             Ok(NextTask {
@@ -417,8 +423,10 @@ impl Engine {
     pub fn count_tasks_due_on(&self, year: i32, month: u32, day: u32) -> Result<i64, StoreError> {
         let date_str = format!("{:04}-{:02}-{:02}", year, month, day);
         let count: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM tasks t
-             WHERE t.done = 0 AND t.due_date IS NOT NULL AND DATE(t.due_date) = ?1",
+            "SELECT (
+                (SELECT COUNT(*) FROM tasks t WHERE t.done = 0 AND t.due_date IS NOT NULL AND DATE(t.due_date) = ?1) +
+                (SELECT COUNT(*) FROM subtasks s WHERE s.done = 0 AND s.due_date IS NOT NULL AND DATE(s.due_date) = ?1)
+             )",
             [&date_str],
             |row| row.get(0),
         )?;
